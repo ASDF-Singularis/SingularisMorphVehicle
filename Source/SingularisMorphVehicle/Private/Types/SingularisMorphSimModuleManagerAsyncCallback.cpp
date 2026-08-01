@@ -76,15 +76,6 @@ UE_NET_IMPLEMENT_NAMED_NETTOKEN_STRUCT_SERIALIZERS(SingularisMorphModuleInputNet
 UE_NET_IMPLEMENT_NAMED_NETTOKEN_STRUCT_SERIALIZERS(NetworkSingularisMorphVehicleStateNetTokenData)
 
 /**
- * 返回统计 ID 名称，供 Unreal Insights 性能分析器识别此回调对象。
- */
-FName FSingularisMorphSimModuleManagerAsyncCallback::GetFNameForStatId() const
-{
-	static constexpr FLazyName StaticName("FSingularisMorphSimModuleManagerAsyncCallback");
-	return StaticName;
-}
-
-/**
  * 将网络输入数据应用到载具组件（物理线程回调）。
  *
  * 从网络包中反序列化的输入数据通过此函数写入载具的 VehicleSimulationPT，
@@ -185,7 +176,6 @@ bool FNetworkSingularisMorphVehicleInputs::NetSerialize(FArchive& Ar, class UPac
 	return bOutSuccess;
 }
 
-
 void FNetworkSingularisMorphVehicleInputs::InterpolateData(
 	const FNetworkPhysicsData& MinData,
 	const FNetworkPhysicsData& MaxData
@@ -200,6 +190,7 @@ void FNetworkSingularisMorphVehicleInputs::InterpolateData(
 	VehicleInputs.KeepAwake = MinInput.VehicleInputs.KeepAwake;
 	VehicleInputs.Container.Lerp(MinInput.VehicleInputs.Container, MaxInput.VehicleInputs.Container, LerpFactor);
 }
+
 
 void FNetworkSingularisMorphVehicleInputs::MergeData(const FNetworkPhysicsData& FromData)
 {
@@ -675,6 +666,15 @@ void FSingularisMorphVehicleAsyncInput::ProcessInputs()
 		VehicleSim->VehicleInputs = PhysicsInputs.NetworkInputs.VehicleInputs;
 	else
 		PhysicsInputs.NetworkInputs.VehicleInputs = VehicleSim->VehicleInputs;
+}
+
+/**
+ * 返回统计 ID 名称，供 Unreal Insights 性能分析器识别此回调对象。
+ */
+FName FSingularisMorphSimModuleManagerAsyncCallback::GetFNameForStatId() const
+{
+	static constexpr FLazyName StaticName("FSingularisMorphSimModuleManagerAsyncCallback");
+	return StaticName;
 }
 
 /**
