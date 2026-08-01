@@ -3,7 +3,7 @@
 #include <Components/PrimitiveComponent.h>
 #include <Engine/World.h>
 
-#include "Subsystems/SingularisMorphVehicleSubsystem.h"
+#include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleSUComponent)
 
@@ -31,8 +31,8 @@ void USingularisMorphVehicleSUComponent::BeginPlay()
 		{
 			if (const UWorld* World = GetWorld())
 			{
-				if (USingularisMorphVehicleSubsystem* Subsystem =
-					World->GetSubsystem<USingularisMorphVehicleSubsystem>())
+				if (USingularisMorphVehicleMappingSubsystem* Subsystem =
+					World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>())
 					Subsystem->RegisterComponentMapping(PrimComp, this);
 			}
 		}
@@ -50,8 +50,8 @@ void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndP
 			{
 				if (const UWorld* World = GetWorld())
 				{
-					if (USingularisMorphVehicleSubsystem* Subsystem =
-						World->GetSubsystem<USingularisMorphVehicleSubsystem>())
+					if (USingularisMorphVehicleMappingSubsystem* Subsystem =
+						World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>())
 						Subsystem->UnregisterComponentMapping(PrimComp);
 				}
 			}
