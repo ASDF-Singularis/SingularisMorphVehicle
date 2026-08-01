@@ -16,6 +16,11 @@ bool USingularisMorphVehiclePhysicsAdapter::IsReady() const
 	return false;
 }
 
+bool USingularisMorphVehiclePhysicsAdapter::IsDirty() const
+{
+	return false;
+}
+
 FString USingularisMorphVehiclePhysicsAdapter::GetAdapterName() const
 {
 	return TEXT("PhysicsAdapter");

@@ -1,13 +1,7 @@
 ﻿#include "Components/SingularisMorphVehicleSimulationComponent.h"
 
-#include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
-#include "Subsystems/SingularisMorphVehicleSubsystem.h"
-
-DEFINE_LOG_CATEGORY(LogSingularisMorphBase);
-
 #include <Engine/World.h>
 #include <PhysicsEngine/BodyInstance.h>
-#include <PhysicsEngine/ClusterUnionComponent.h>
 #include <PhysicsProxy/ClusterUnionPhysicsProxy.h>
 #include <PhysicsProxy/SingleParticlePhysicsProxy.h>
 
@@ -20,6 +14,9 @@ DEFINE_LOG_CATEGORY(LogSingularisMorphBase);
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "Interfaces/SingularisMorphVehicleBaseInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
+#include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
+
+DEFINE_LOG_CATEGORY(LogSingularisMorphBase);
 
 USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationComponent()
 {
@@ -170,7 +167,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	NextConstructionIndex = 0;
 
 	// 3) 构建 SUComponent → Entity 快速查找表
-	TMap<TObjectPtr<USingularisMorphVehicleSUComponent>, const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity*> EntityMap;
+	TMap<TObjectPtr<USingularisMorphVehicleSUComponent>, const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity*>
+		EntityMap;
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (Entity.SUComponent)
@@ -193,7 +191,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (!CoreModule) return INDEX_NONE;
 
 		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
-			SUComp->ProxyComponent.GetComponent(Owner));
+			SUComp->ProxyComponent.GetComponent(Owner)
+		);
 		if (!ProxyComp)
 		{
 			delete CoreModule;
@@ -201,7 +200,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		}
 
 		FTransform CompTransform = ProxyComp->GetComponentTransform().GetRelativeTransform(
-			ReferenceTransform);
+			ReferenceTransform
+		);
 		CompTransform = SUComp->TransformOffset * CompTransform;
 
 		const int32 TransformIndex = NextConstructionIndex++;
@@ -250,12 +250,14 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (!EngineSU) continue;
 
 		if (auto* ClutchSU = Cast<USingularisMorphVehicleClutchSUComponent>(
-			EngineSU->LinkedClutch.GetComponent(Owner)))
+			EngineSU->LinkedClutch.GetComponent(Owner)
+		))
 		{
 			const int32 ClutchIndex = AddEntity(ClutchSU, EngineIndex);
 
 			if (auto* TransSU = Cast<USingularisMorphVehicleTransmissionSUComponent>(
-				ClutchSU->LinkedTransmission.GetComponent(Owner)))
+				ClutchSU->LinkedTransmission.GetComponent(Owner)
+			))
 			{
 				AddEntity(TransSU, ClutchIndex);
 			}
@@ -287,7 +289,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 		int32 ParentIdx = ChassisIndex;
 		if (auto* LinkedSusp = Cast<USingularisMorphVehicleSuspensionSUComponent>(
-			WheelSU->LinkedSuspension.GetComponent(Owner)))
+			WheelSU->LinkedSuspension.GetComponent(Owner)
+		))
 		{
 			if (const int32* FoundIdx = SuspensionIndexMap.Find(LinkedSusp))
 				ParentIdx = *FoundIdx;
@@ -315,16 +318,6 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	// 6) 批量提交到物理线程
 	UpdatePhysicalProperties();
 	FinalizeModuleUpdates();
-}
-
-void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
-{
-	// 从适配器拉取完整快照并全量重建物理模拟树（Pull Model）
-	if (PhysicsAdapter)
-	{
-		const FSingularisMorphVehiclePhysicsAdapterSnapshot Snapshot = PhysicsAdapter->ConsumeSnapshot();
-		RebuildFromSnapshot(Snapshot);
-	}
 }
 
 void USingularisMorphVehicleSimulationComponent::UpdatePhysicalProperties()
@@ -384,6 +377,16 @@ void USingularisMorphVehicleSimulationComponent::CacheRootPhysicsObject(
 }
 
 void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime) {}
+
+void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
+{
+	// 从适配器拉取完整快照并全量重建物理模拟树（Pull Model）
+	if (PhysicsAdapter)
+	{
+		const FSingularisMorphVehiclePhysicsAdapterSnapshot Snapshot = PhysicsAdapter->ConsumeSnapshot();
+		RebuildFromSnapshot(Snapshot);
+	}
+}
 
 void USingularisMorphVehicleSimulationComponent::SetCurrentAsyncData(
 	FSingularisMorphChaosSimModuleManagerAsyncOutput* CurOutput,
