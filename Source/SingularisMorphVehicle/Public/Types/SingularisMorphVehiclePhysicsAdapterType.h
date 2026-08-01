@@ -43,21 +43,21 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshotE
 	 * 由适配器在构建快照时通过 Subsystem 完成映射，
 	 * 消费端直接使用，无需二次查找。
 	 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TObjectPtr<USingularisMorphVehicleSUComponent> SUComponent = nullptr;
 
 	/**
 	 * 集群内粒子索引。
 	 * 用于定位 ChildParticles 数组中的 ChildToParent 变换。
 	 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 ParticleIndex = INDEX_NONE;
 
 	/**
 	 * 相对于父粒子的局部变换。
 	 * 源自 ClusterUnionChildData::ChildToParent，用于初始化模块空间姿态。
 	 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FTransform ChildToParent = FTransform::Identity;
 };
 
@@ -78,7 +78,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshot
 	 * 当前集群中所有有效模块实体的完整列表。
 	 * 消费端按遍历顺序全量重建模拟树。
 	 */
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FSingularisMorphVehiclePhysicsAdapterSnapshotEntity> Entities;
 
 	/** 实体列表为空时返回 true，消费端据此跳过重建 */
