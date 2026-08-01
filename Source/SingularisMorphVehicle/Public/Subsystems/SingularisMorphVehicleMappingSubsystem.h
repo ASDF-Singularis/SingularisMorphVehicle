@@ -3,7 +3,7 @@
 #include <CoreMinimal.h>
 #include <Subsystems/WorldSubsystem.h>
 
-#include "SingularisMorphVehicleSubsystem.generated.h"
+#include "SingularisMorphVehicleMappingSubsystem.generated.h"
 
 class USingularisMorphVehicleSUComponent;
 class UPrimitiveComponent;
@@ -16,7 +16,7 @@ class UPrimitiveComponent;
  * O(1) 反向查找。组件在 BeginPlay/EndPlay 中自行注册/注销。
  */
 UCLASS(NotBlueprintable, BlueprintType)
-class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSubsystem : public UWorldSubsystem
+class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleMappingSubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
 

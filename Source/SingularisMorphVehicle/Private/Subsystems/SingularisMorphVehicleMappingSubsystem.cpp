@@ -1,10 +1,10 @@
-﻿#include "Subsystems/SingularisMorphVehicleSubsystem.h"
+﻿#include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 
 #include <Components/PrimitiveComponent.h>
 
 #include "Components/SingularisMorphVehicleSUComponent.h"
 
-void USingularisMorphVehicleSubsystem::RegisterComponentMapping(
+void USingularisMorphVehicleMappingSubsystem::RegisterComponentMapping(
 	UPrimitiveComponent* PrimComp,
 	USingularisMorphVehicleSUComponent* SUComp
 )
@@ -13,13 +13,13 @@ void USingularisMorphVehicleSubsystem::RegisterComponentMapping(
 	ComponentMap.Add(PrimComp, SUComp);
 }
 
-void USingularisMorphVehicleSubsystem::UnregisterComponentMapping(UPrimitiveComponent* PrimComp)
+void USingularisMorphVehicleMappingSubsystem::UnregisterComponentMapping(UPrimitiveComponent* PrimComp)
 {
 	if (!IsValid(PrimComp)) return;
 	ComponentMap.Remove(PrimComp);
 }
 
-USingularisMorphVehicleSUComponent* USingularisMorphVehicleSubsystem::FindSUComponent(
+USingularisMorphVehicleSUComponent* USingularisMorphVehicleMappingSubsystem::FindSUComponent(
 	UPrimitiveComponent* PrimComp
 ) const
 {
