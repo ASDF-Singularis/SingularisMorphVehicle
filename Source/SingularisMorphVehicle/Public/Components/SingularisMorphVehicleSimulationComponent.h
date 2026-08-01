@@ -75,7 +75,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 #pragma endregion
 
 /**
- * 引力奇点变型载具仿真组件。
+ * 引力奇点变型载具仿真组件
  *
  * 挂载于变型载具 Actor/Pawn 上，作为整个模块化模拟系统的核心调度器。
  * 管理模拟模块树、异步物理回调、物理适配器与动力学输出，
@@ -121,7 +121,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型载具仿真组件|参数",
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
 		meta = (DisplayName = "线性阻尼")
 	)
 	float LinearDamping = 0.01f;
@@ -130,7 +130,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型载具仿真组件|参数",
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
 		meta = (DisplayName = "角阻尼")
 	)
 	float AngularDamping = 0.0f;
