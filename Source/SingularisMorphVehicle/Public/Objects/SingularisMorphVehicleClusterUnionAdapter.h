@@ -13,11 +13,12 @@ class USingularisMorphVehicleClusterUnionComponent;
  * 引力奇点变型载具集群联合物理适配器。
  *
  * 桥接集群联合组件与仿真组件。
- * 集群增删事件触发脏标记，ConsumeSnapshot 返回当前集群的完整组件快照，
- * 由 SimComp 通过 ConsumeSnapshot 拉取并全量重建物理模拟树。
+ * 集群增删事件通过回调标记脏状态（bDirty），由 IsDirty() SPI 对外暴露；
+ * ConsumeSnapshot() 仅负责构建快照，由 SimComp 在确认 IsDirty() 后调用。
+ * 脏标记的查询与快照构建职责正交，完全符合基类 SPI 设计约束。
  *
  * 适配器本身不调用 SimComp 任何方法——仅被动接收集群事件、
- * 等待 SimComp 拉取，完全符合 SPI 设计约束。
+ * 等待 SimComp 拉取。
  */
 UCLASS(NotBlueprintable, BlueprintType)
 class SINGULARISMORPHVEHICLE_API
@@ -43,7 +44,11 @@ private:
 
 	TWeakObjectPtr<USingularisMorphVehicleClusterUnionComponent> ClusterUnionComponent = nullptr;
 
-	/** 集群变更脏标记，下次 ConsumeSnapshot 时重建完整快照并清零 */
+	/**
+	 * 集群变更脏标记。
+	 * 由 OnClusterComponentAdded / OnClusterComponentRemoved 事件置位，
+	 * 通过 IsDirty() 对外暴露，ConsumeSnapshot() 消费后清零。
+	 */
 	bool bDirty = false;
 
 	/** 防止 Initialize 重复绑定事件 */
@@ -58,6 +63,7 @@ public:
 	virtual void Terminate() override;
 
 	virtual bool IsReady() const override;
+	virtual bool IsDirty() const override;
 	virtual FString GetAdapterName() const override;
 	virtual IPhysicsProxyBase* GetPhysicsProxy() const override;
 	virtual FTransform GetReferenceTransform() const override;

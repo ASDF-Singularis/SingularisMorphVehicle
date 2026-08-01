@@ -1,12 +1,12 @@
 #include "Objects/SingularisMorphVehicleClusterUnionAdapter.h"
 
-#include <PhysicsEngine/ClusterUnionComponent.h>
 #include <Engine/World.h>
+#include <PhysicsEngine/ClusterUnionComponent.h>
 
 #include "Components/SingularisMorphVehicleClusterUnionComponent.h"
-#include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Components/SingularisMorphVehicleSUComponent.h"
-#include "Subsystems/SingularisMorphVehicleSubsystem.h"
+#include "Components/SingularisMorphVehicleSimulationComponent.h"
+#include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 
 void USingularisMorphVehicleClusterUnionAdapter::Initialize(const FSingularisMorphVehiclePhysicsAdapterContext& Context)
 {
@@ -50,6 +50,11 @@ bool USingularisMorphVehicleClusterUnionAdapter::IsReady() const
 	return Proxy && !Proxy->GetSyncedData_External().ChildParticles.IsEmpty();
 }
 
+bool USingularisMorphVehicleClusterUnionAdapter::IsDirty() const
+{
+	return bDirty;
+}
+
 FString USingularisMorphVehicleClusterUnionAdapter::GetAdapterName() const
 {
 	return TEXT("ClusterUnionAdapter");
@@ -71,8 +76,8 @@ FTransform USingularisMorphVehicleClusterUnionAdapter::GetReferenceTransform() c
 
 FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnionAdapter::ConsumeSnapshot()
 {
-	// 1) 无变更时返回空快照，避免不必要的重建
-	if (!bDirty || !ClusterUnionComponent.IsValid()) return {};
+	// 1) 集群联合组件有效性检查
+	if (!ClusterUnionComponent.IsValid()) return {};
 
 	const Chaos::FClusterUnionPhysicsProxy* Proxy = ClusterUnionComponent->GetPhysicsProxyPublic();
 	if (!Proxy) return {};
@@ -87,7 +92,8 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 	// 3) 获取 Subsystem 用于物理组件到 SU 组件的映射
 	const UWorld* World = GetWorld();
 	if (!World) return {};
-	USingularisMorphVehicleSubsystem* Subsystem = World->GetSubsystem<USingularisMorphVehicleSubsystem>();
+	const USingularisMorphVehicleMappingSubsystem* Subsystem =
+		World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>();
 	if (!Subsystem) return {};
 
 	// 4) 遍历集群子组件，构建完整快照
@@ -95,7 +101,7 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 	const int32 Count = FMath::Min(ChildParticles.Num(), ClusterChildren.Num());
 	Snapshot.Entities.Reserve(Count);
 
-	for (int32 I = 0; I < Count; I++)
+	for (auto I = 0; I < Count; I++)
 	{
 		UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(ClusterChildren[I]);
 		if (!PrimComp) continue;
