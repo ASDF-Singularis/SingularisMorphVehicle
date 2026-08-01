@@ -28,6 +28,8 @@ void FSingularisMorphVehicleModule::ShutdownModule()
 	FPhysicsDelegates::OnPhysSceneTerm.Remove(OnPhysSceneTermHandle);
 }
 
+// ReSharper disable CppMemberFunctionMayBeStatic
+
 void FSingularisMorphVehicleModule::PhysSceneInit(FPhysScene* PhysScene)
 {
 	new FSingularisMorphSimModuleManager(PhysScene);
@@ -46,6 +48,7 @@ void FSingularisMorphVehicleModule::PhysSceneTerm(FPhysScene* PhysScene)
 	}
 }
 
+// ReSharper restore CppMemberFunctionMayBeStatic
 
 #undef LOCTEXT_NAMESPACE
 
