@@ -36,11 +36,15 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 	const FSimModuleTree::FSimModuleNode* TransmissionNode =
 		SimModuleTree->LocateNodeByType<FTransmissionSimModule>();
 
-	const int32 NumNodes = SimModuleTree->NumActiveNodes();
+	// 遍历全部树槽位（含删除后遗留的空槽），而不是按 NumActiveNodes 计数取前 N 个索引：
+	// 全量重建时新节点的树索引不从 0 开始（旧节点删除、槽位由 FreeList 复用或追加），
+	// 按计数取前 N 个索引会访问到已删除的空槽（nullptr 全部被跳过），
+	// 导致悬挂↔车轮链接全部失败（WheelSimTreeIdx=-1），悬挂失去弹簧力、轮子下坠。
+	const int32 NumNodes = SimModuleTree->GetNumNodes();
 	UE_LOG(
 		LogSingularisMorphBase,
 		Log,
-		TEXT("=== FixupTreeLinks: %d active nodes, TransmissionNode=%s ==="),
+		TEXT("=== FixupTreeLinks: %d tree slots, TransmissionNode=%s ==="),
 		NumNodes,
 		TransmissionNode ? TEXT("found") : TEXT("NOT found")
 	);

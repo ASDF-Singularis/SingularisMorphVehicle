@@ -87,7 +87,7 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 	// 2) 获取物理场景，用于粒子代理反查所属组件
 	const UWorld* World = GetWorld();
 	if (!World) return {};
-	FPhysScene* PhysScene = World->GetPhysicsScene();
+	const FPhysScene* PhysScene = World->GetPhysicsScene();
 	if (!PhysScene) return {};
 
 	// 3) 遍历集群子粒子，通过粒子代理反查所属物理组件后构建完整快照。
