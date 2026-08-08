@@ -111,7 +111,10 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 
 		FSingularisMorphVehiclePhysicsAdapterSnapshotEntity Entity;
 		Entity.SUComponent = SUComp;
-		Entity.ParticleIndex = I;
+		// 写入粒子的真实唯一索引（而非数组下标）：
+		// 模块通过 ParticleIdx 在集群中查找自身粒子（GetClusterParticle），
+		// 若使用数组下标会匹配不到粒子，甚至错配到其它子粒子，导致车轮/悬挂动画与受力失效。
+		Entity.ParticleIndex = ChildParticles[I].ParticleIdx.Idx;
 		Entity.ChildToParent = ChildParticles[I].ChildToParent;
 
 		Snapshot.Entities.Emplace(MoveTemp(Entity));
@@ -157,4 +160,11 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentRemoved(
 	if (!IsValid(Component)) return;
 
 	bDirty = true;
+
+	UE_LOG(
+		LogSingularisMorphBase,
+		Log,
+		TEXT("[ClusterUnionAdapter] OnClusterComponentRemoved: Component=%s"),
+		*GetNameSafe(Component)
+	);
 }

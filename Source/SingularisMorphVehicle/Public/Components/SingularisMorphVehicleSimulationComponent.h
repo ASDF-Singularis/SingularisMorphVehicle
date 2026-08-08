@@ -117,24 +117,6 @@ public:
 	)
 	EModuleInputQuantizationType InputQuantizationType = EModuleInputQuantizationType::Default_16Bits;
 
-	/** 线性阻尼（空气阻力） */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
-		meta = (DisplayName = "线性阻尼")
-	)
-	float LinearDamping = 0.01f;
-
-	/** 角阻尼（旋转阻力） */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
-		meta = (DisplayName = "角阻尼")
-	)
-	float AngularDamping = 0.0f;
-
 	/**
 	 * 物理适配器实例。
 	 *
@@ -150,6 +132,69 @@ public:
 		meta = (DisplayName = "物理适配器")
 	)
 	TObjectPtr<USingularisMorphVehiclePhysicsAdapter> PhysicsAdapter = nullptr;
+
+	/** 线性阻尼（空气阻力） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|阻尼",
+		meta = (DisplayName = "线性阻尼")
+	)
+	float LinearDamping = 0.01f;
+
+	/** 角阻尼（旋转阻力） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|阻尼",
+		meta = (DisplayName = "角阻尼")
+	)
+	float AngularDamping = 0.0f;
+
+	/** 保持载具唤醒（禁止休眠） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
+		meta = (DisplayName = "禁止休眠")
+	)
+	bool bKeepVehicleAwake = true;
+
+	/** 悬挂射线检测通道 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
+		meta = (DisplayName = "悬挂射线通道")
+	)
+	TEnumAsByte<ECollisionChannel> SuspensionCollisionChannel = ECC_WorldDynamic;
+
+	/** 悬挂射线碰撞响应 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
+		meta = (DisplayName = "悬挂射线碰撞响应")
+	)
+	FCollisionResponseContainer SuspensionTraceCollisionResponses{};
+
+	/** 悬挂射线是否使用复杂碰撞 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
+		meta = (DisplayName = "悬挂射线复杂碰撞")
+	)
+	bool bSuspensionTraceComplex = false;
+
+	/** 悬挂射线类型 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
+		meta = (DisplayName = "悬挂射线类型")
+	)
+	ESingularisMorphTraceType TraceType = ESingularisMorphTraceType::Raycast;
 
 #pragma endregion
 
@@ -188,11 +233,11 @@ private:
 	/** 物理线程输出的插值数据 */
 	TUniquePtr<FSingularisMorphVehiclePhysicsOutput> VehiclePhysicsOutput = nullptr;
 
-	/** 组件到模拟对象的映射 */
-	TMap<TObjectPtr<USceneComponent>, FSingularisMorphVehicleComponentData> ComponentToPhysicsObjects{};
+	/** 组件到模拟对象的映射（Key = SU 组件，避免多模块共享同一代理时的覆盖） */
+	TMap<TObjectPtr<UActorComponent>, FSingularisMorphVehicleComponentData> ComponentToPhysicsObjects{};
 
-	/** 模拟 GUID 到组件的反向映射 */
-	TMap<int32, TWeakObjectPtr<USceneComponent>> PhysicsGuidToComponent{};
+	/** 模拟 GUID 到 SU 组件的反向映射（供 ParallelUpdate 回调 OnOutputReady） */
+	TMap<int32, TWeakObjectPtr<UActorComponent>> PhysicsGuidToComponent{};
 
 	Chaos::FPhysicsObjectHandle RootPhysicsObject = nullptr;
 

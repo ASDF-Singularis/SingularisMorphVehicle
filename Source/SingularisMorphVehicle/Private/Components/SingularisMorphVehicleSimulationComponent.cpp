@@ -1,7 +1,7 @@
 ﻿#include "Components/SingularisMorphVehicleSimulationComponent.h"
 
 #include <Engine/World.h>
-#include <PhysicsEngine/BodyInstance.h>
+#include <GameFramework/WorldSettings.h>
 #include <PhysicsProxy/ClusterUnionPhysicsProxy.h>
 #include <PhysicsProxy/SingleParticlePhysicsProxy.h>
 
@@ -28,7 +28,11 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 	bAutoActivate = true;
 
 	bUsingNetworkPhysicsPrediction = Chaos::FPhysicsSolverBase::IsNetworkPhysicsPredictionEnabled();
-	CurrentAsyncDataType = AsyncDefault;
+	CurrentAsyncDataType = AsyncInvalid;
+
+	// 默认悬挂射线响应：对 WorldStatic 阻挡（否则射线全部 Ignore，悬挂无法检测地面）
+	SuspensionTraceCollisionResponses.SetAllChannels(ECR_Ignore);
+	SuspensionTraceCollisionResponses.SetResponse(ECC_WorldStatic, ECR_Block);
 }
 
 void USingularisMorphVehicleSimulationComponent::BeginPlay()
@@ -77,6 +81,16 @@ void USingularisMorphVehicleSimulationComponent::OnCreatePhysicsState()
 		VehicleSimulationPT.IsValid() ? TEXT("valid") : TEXT("null"),
 		GetPhysicsProxy() ? TEXT("valid") : TEXT("null")
 	);
+
+	// 2a) 若需禁止休眠则设置集群粒子为永不睡眠
+	if (bKeepVehicleAwake)
+	{
+		if (auto* Proxy = static_cast<Chaos::FClusterUnionPhysicsProxy*>(GetPhysicsProxy()))
+		{
+			if (auto* Particle = Proxy->GetParticle_External())
+				Particle->SetSleepType(Chaos::ESleepType::NeverSleep);
+		}
+	}
 
 	// 3) 自忽略（悬挂射线不命中自身）
 	if (AActor* Owner = GetOwner()) ActorsToIgnore.Add(Owner);
@@ -157,6 +171,15 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	TArray<int32> ExistingGuids;
 	for (const auto& Pair : ComponentToPhysicsObjects)
 		ExistingGuids.Add(Pair.Value.Guid);
+
+	UE_LOG(
+		LogSingularisMorphBase,
+		Log,
+		TEXT("[RebuildFromSnapshot] Removing %d old modules, adding %d from snapshot"),
+		ExistingGuids.Num(),
+		Snapshot.Entities.Num()
+	);
+
 	for (int32 Guid : ExistingGuids)
 		RemoveSimulationModule(Guid);
 
@@ -166,6 +189,11 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	ModuleAnimationSetups.Empty();
 	NextConstructionIndex = 0;
 
+	// 2a) 缓存根物理对象（首次或重建时刷新）
+	//     模块构造期需要 RootPhysicsObject 进行 OnConstruction_External 初始化
+	if (RootPhysicsObject == nullptr)
+		CacheRootPhysicsObject(GetPhysicsProxy());
+
 	// 3) 构建 SUComponent → Entity 快速查找表
 	TMap<TObjectPtr<USingularisMorphVehicleSUComponent>, const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity*>
 		EntityMap;
@@ -173,6 +201,35 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (Entity.SUComponent)
 			EntityMap.Add(Entity.SUComponent, &Entity);
+	}
+
+	// 3a) 从 Wheel 的 LinkedSuspension 收集不在快照中的悬挂组件
+	//     悬挂是纯仿真模块，非集群物理子节点，不出现在快照中。
+	TArray<FSingularisMorphVehiclePhysicsAdapterSnapshotEntity> SynthesizedEntities;
+	TSet<USingularisMorphVehicleSuspensionSUComponent*> SynthesizedSuspensions;
+	for (const auto& Entity : Snapshot.Entities)
+	{
+		auto* WheelSU = Cast<USingularisMorphVehicleWheelSUComponent>(Entity.SUComponent);
+		if (!WheelSU) continue;
+		if (auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(
+			WheelSU->LinkedSuspension.GetComponent(Owner)
+		))
+		{
+			if (!EntityMap.Contains(SuspSU))
+			{
+				// 合成悬挂实体：位置与粒子直接复用所挂车轮的集群数据。
+				// 悬挂是纯仿真模块（无自己的集群粒子），其射线起点、弹簧力作用点
+				// 以及动画目标都必须落在车轮位置，否则弹簧力全部作用在质心、
+				// 车辆表现为无法模拟的刚体（参考原版：悬挂 ProxyComponent 指向车轮网格）。
+				FSingularisMorphVehiclePhysicsAdapterSnapshotEntity SynthEntity;
+				SynthEntity.SUComponent = SuspSU;
+				SynthEntity.ParticleIndex = Entity.ParticleIndex;
+				SynthEntity.ChildToParent = Entity.ChildToParent;
+				SynthesizedEntities.Emplace(MoveTemp(SynthEntity));
+				SynthesizedSuspensions.Add(SuspSU);
+				EntityMap.Add(SynthesizedEntities.Last().SUComponent, &SynthesizedEntities.Last());
+			}
+		}
 	}
 
 	// 4) 核心 Lambda：将快照实体注册到模拟树
@@ -193,6 +250,31 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
 			SUComp->ProxyComponent.GetComponent(Owner)
 		);
+
+		// 悬挂模块：代理组件回退到所挂车轮的网格组件。
+		// 资产中的悬挂 SU 未配置 ProxyComponent，空引用会解析到根组件（ClusterUnion），
+		// 导致悬挂模块位于原点（射线/受力点错误）且动画直接写入根组件（整车被拽到地下并抽搐）。
+		// 仅对合成悬挂（无自身集群粒子）回退，已显式配置代理的悬挂不受影响。
+		if (auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(SUComp))
+		{
+			if (SynthesizedSuspensions.Contains(SuspSU))
+			{
+				for (const auto& WheelEntity : Snapshot.Entities)
+				{
+					auto* WheelSU = Cast<USingularisMorphVehicleWheelSUComponent>(WheelEntity.SUComponent);
+					if (!WheelSU) continue;
+					if (WheelSU->LinkedSuspension.GetComponent(Owner) != SuspSU) continue;
+					if (UPrimitiveComponent* WheelProxy = Cast<UPrimitiveComponent>(
+						WheelSU->ProxyComponent.GetComponent(Owner)
+					))
+					{
+						ProxyComp = WheelProxy;
+						break;
+					}
+				}
+			}
+		}
+
 		if (!ProxyComp)
 		{
 			delete CoreModule;
@@ -218,6 +300,11 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (ModuleIdx != INDEX_NONE)
 		{
 			SUComp->SetModuleGuid(CoreModule->GetGuid());
+			FSingularisMorphVehicleComponentData CompData;
+			CompData.Guid = CoreModule->GetGuid();
+			CompData.ProxyComponentToAnimate = ProxyComp;
+			ComponentToPhysicsObjects.Add(SUComp, CompData);
+			PhysicsGuidToComponent.Add(CoreModule->GetGuid(), SUComp);
 			TypeToTreeIndex.Add(SUComp->GetModuleType(), ModuleIdx);
 			ProcessedComponents.Add(SUComp);
 		}
@@ -245,6 +332,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (Entity.SUComponent->GetModuleType() != ESingularisMorphVehicleModuleType::Engine) continue;
 
 		const int32 EngineIndex = AddEntity(Entity.SUComponent, ChassisIndex);
+		if (EngineIndex == INDEX_NONE) continue;
 
 		auto* EngineSU = Cast<USingularisMorphVehicleEngineSUComponent>(Entity.SUComponent);
 		if (!EngineSU) continue;
@@ -264,14 +352,12 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		}
 	}
 
-	// 5c) Pass 3: Suspension → Chassis，记录 Susp→Index 映射供 Wheel 查找
+	// 5c) Pass 3: Suspension → Chassis（合成实体，源自 Wheel 的 LinkedSuspension）
+	//     记录 Susp→Index 映射供 Wheel 查找父节点
 	TMap<USingularisMorphVehicleSuspensionSUComponent*, int32> SuspensionIndexMap;
-	for (const auto& Entity : Snapshot.Entities)
+	for (const auto& SynthEntity : SynthesizedEntities)
 	{
-		if (!Entity.SUComponent) continue;
-		if (Entity.SUComponent->GetModuleType() != ESingularisMorphVehicleModuleType::Suspension) continue;
-
-		auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(Entity.SUComponent);
+		auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(SynthEntity.SUComponent);
 		if (!SuspSU) continue;
 
 		const int32 SuspIndex = AddEntity(SuspSU, ChassisIndex);
@@ -381,7 +467,8 @@ void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime) {
 void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
 {
 	// 从适配器拉取完整快照并全量重建物理模拟树（Pull Model）
-	if (PhysicsAdapter)
+	// 仅当适配器就绪且存在待处理的拓扑变更时才执行重建
+	if (PhysicsAdapter && PhysicsAdapter->IsReady() && PhysicsAdapter->IsDirty())
 	{
 		const FSingularisMorphVehiclePhysicsAdapterSnapshot Snapshot = PhysicsAdapter->ConsumeSnapshot();
 		RebuildFromSnapshot(Snapshot);
@@ -479,22 +566,61 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 	}
 
 	// 3) 分发输出数据到各 SU Component
+	int32 CallbackCount = 0;
 	for (int32 I = 0; I < NumItems; ++I)
 	{
 		if (!VehiclePhysicsOutput->SimTreeOutputData[I]) continue;
 
 		const int32 Guid = VehiclePhysicsOutput->SimTreeOutputData[I]->ModuleGuid;
 
-		if (const TWeakObjectPtr<USceneComponent>* Component = PhysicsGuidToComponent.Find(
+		if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(
 			Guid
 		))
 		{
 			if (auto* BaseSU = Cast<ISingularisMorphVehicleBaseInterface>(
 				Component->Get()
 			))
+			{
 				BaseSU->OnOutputReady(VehiclePhysicsOutput->SimTreeOutputData[I]);
+				++CallbackCount;
+			}
+		}
+
+		// 3a) 将仿真动画数据从 FSimOutputData 拷贝到 ModuleAnimationSetups
+		if (Chaos::FSimOutputData* ModuleOutput = VehiclePhysicsOutput->SimTreeOutputData[I])
+		{
+			FTransform WorldTransform = FTransform::Identity;
+			if (const AActor* Owner = GetOwner())
+			{
+				if (const USceneComponent* RootComp = Owner->GetRootComponent())
+					WorldTransform = RootComp->GetComponentToWorld();
+			}
+
+			Chaos::FSimModuleAnimationData AnimData;
+			ModuleOutput->GetFinalAnimDataGameThread(WorldTransform, AnimData);
+
+			const int32 AnimIndex = AnimData.AnimationSetupIndex;
+			if (AnimIndex >= 0 && AnimIndex < ModuleAnimationSetups.Num())
+			{
+				ModuleAnimationSetups[AnimIndex].AnimFlags |= AnimData.AnimFlags;
+				ModuleAnimationSetups[AnimIndex].CombinedRotation = AnimData.CombinedRotation;
+
+				if (AnimData.AnimFlags & Chaos::EAnimationFlags::AnimateRotation)
+					ModuleAnimationSetups[AnimIndex].RotOffset = AnimData.AnimationRotOffset;
+
+				if (AnimData.AnimFlags & Chaos::EAnimationFlags::AnimatePosition)
+					ModuleAnimationSetups[AnimIndex].LocOffset = AnimData.AnimationLocOffset;
+			}
 		}
 	}
+	UE_LOG(
+		LogSingularisMorphBase,
+		Log,
+		TEXT("[ParallelUpdate] NumItems=%d, OnOutputReady called=%d, PhysicsGuidToComponent size=%d"),
+		NumItems,
+		CallbackCount,
+		PhysicsGuidToComponent.Num()
+	);
 }
 
 void USingularisMorphVehicleSimulationComponent::ProduceInput(
@@ -505,22 +631,103 @@ void USingularisMorphVehicleSimulationComponent::ProduceInput(
 {
 	if (!AsyncInput) return;
 
-	AsyncInput->SetVehicle(this);
-
-	// 1) 获取物理代理
 	IPhysicsProxyBase* Proxy = GetPhysicsProxy();
-	if (Proxy) AsyncInput->Proxy = Proxy;
+	if (!Proxy) return;
+
+	AsyncInput->SetVehicle(this);
+	AsyncInput->Proxy = Proxy;
+
+	// 1) 禁止休眠
+	AsyncInput->PhysicsInputs.NetworkInputs.VehicleInputs.KeepAwake = bKeepVehicleAwake;
+
+	// 2) 时间膨胀
+	AsyncInput->PhysicsInputs.CurrentTimeDilation = 1.0f;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AWorldSettings* WorldSettings = World->GetWorldSettings())
+		{
+			AsyncInput->PhysicsInputs.CurrentTimeDilation = FMath::Max(
+				WorldSettings->GetEffectiveTimeDilation(),
+				SMALL_NUMBER
+			);
+		}
+	}
+
+	// 3) 悬挂射线参数（地面检测必需）
+	FCollisionQueryParams TraceParams(
+		NAME_None,
+		FCollisionQueryParams::GetUnknownStatId(),
+		false,
+		nullptr
+	);
+	TraceParams.bReturnPhysicalMaterial = true;
+	TraceParams.AddIgnoredActors(ActorsToIgnore);
+	TraceParams.bTraceComplex = bSuspensionTraceComplex;
+	AsyncInput->PhysicsInputs.CollisionChannel = SuspensionCollisionChannel;
+	AsyncInput->PhysicsInputs.TraceParams = TraceParams;
+	AsyncInput->PhysicsInputs.TraceCollisionResponse = SuspensionTraceCollisionResponses;
+	AsyncInput->PhysicsInputs.TraceType = TraceType;
 
 	UE_LOG(
 		LogSingularisMorphBase,
 		Log,
-		TEXT("[SimComp] ProduceInput: PhysicsStep=%d, Proxy=%s"),
+		TEXT("[SimComp] ProduceInput: PhysicsStep=%d, Proxy=%s, KeepAwake=%d"),
 		PhysicsStep,
-		Proxy ? TEXT("valid") : TEXT("null")
+		Proxy ? TEXT("valid") : TEXT("null"),
+		bKeepVehicleAwake
 	);
 }
 
-void USingularisMorphVehicleSimulationComponent::PostUpdate() {}
+void USingularisMorphVehicleSimulationComponent::PostUpdate()
+{
+	/*// 将模拟输出应用到视觉组件变换（悬挂压缩、车轮旋转等）
+	int32 UpdatedCount = 0;
+	for (int32 AnimIndex = 0; AnimIndex < ModuleAnimationSetups.Num(); ++AnimIndex)
+	{
+		const FSingularisMorphModuleAnimationSetup& AnimSetup = ModuleAnimationSetups[AnimIndex];
+		const int32 ModuleGuid = AnimSetup.ModuleGUID;
+		if (ModuleGuid == INDEX_NONE) continue;
+
+		USceneComponent* ComponentToAnimate = nullptr;
+		for (const auto& Pair : ComponentToPhysicsObjects)
+		{
+			if (Pair.Value.Guid == ModuleGuid)
+			{
+				ComponentToAnimate = Pair.Value.ProxyComponentToAnimate;
+				break;
+			}
+		}
+		if (!ComponentToAnimate) continue;
+
+		FTransform NewRelativeTransform = ComponentToAnimate->GetRelativeTransform();
+		if (AnimSetup.AnimFlags & Chaos::EAnimationFlags::AnimateRotation)
+		{
+			NewRelativeTransform.SetRotation(
+				AnimSetup.InitialRotOffset * AnimSetup.CombinedRotation
+			);
+		}
+		if (AnimSetup.AnimFlags & Chaos::EAnimationFlags::AnimatePosition)
+		{
+			NewRelativeTransform.SetLocation(
+				AnimSetup.InitialLocOffset + AnimSetup.LocOffset
+			);
+		}
+		ComponentToAnimate->SetRelativeTransform(
+			NewRelativeTransform,
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics
+		);
+		++UpdatedCount;
+	}
+	UE_LOG(
+		LogSingularisMorphBase,
+		Log,
+		TEXT("[PostUpdate] ModuleAnimationSetups=%d, Updated=%d"),
+		ModuleAnimationSetups.Num(),
+		UpdatedCount
+	);*/
+}
 
 void USingularisMorphVehicleSimulationComponent::FinalizeSimCallbackData(
 	FSingularisMorphChaosSimModuleManagerAsyncInput& Input
@@ -724,7 +931,24 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 	FTransform ClusterredTransform(FQuat::Identity, InitialTransform.GetLocation());
 	CoreModule->SetClusteredTransform(ClusterredTransform);
 
-	// 6) 通知模块物理对象已就绪（与旧代码 AddModuleToTree 的 OnConstruction_External 一致）
+	// 6a) 动画绑定：为每个模块创建 AnimationSetup，供 PostUpdate 更新渲染变换
+	CoreModule->SetAnimationData(
+		CoreModule->GetBoneName(),
+		CoreModule->GetAnimationOffset(),
+		ModuleAnimationSetups.Num()
+	);
+	{
+		FSingularisMorphModuleAnimationSetup AnimSetup(
+			CoreModule->GetBoneName(),
+			TransformIndex,
+			CoreModule->GetGuid()
+		);
+		AnimSetup.InitialRotOffset = InitialTransform.GetRotation();
+		AnimSetup.InitialLocOffset = InitialTransform.GetTranslation();
+		ModuleAnimationSetups.Add(AnimSetup);
+	}
+
+	// 6b) 通知模块物理对象已就绪（与旧代码 AddModuleToTree 的 OnConstruction_External 一致）
 	if (RootPhysicsObject)
 		CoreModule->OnConstruction_External(RootPhysicsObject);
 

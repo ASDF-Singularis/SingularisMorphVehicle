@@ -36,6 +36,7 @@ ASingularisMorphVehicleClusterPawn::ASingularisMorphVehicleClusterPawn()
 	);
 	Adapter->ClusterUnionComponentReference.OtherActor = this;
 	Adapter->ClusterUnionComponentReference.PathToComponent = VehicleClusterUnionComponent->GetName();
+	Adapter->ClusterUnionComponentReference.ComponentProperty = VehicleClusterUnionComponent->GetFName();
 
 	// 5) 替换模拟组件的默认物理适配器为集群联合适配器
 	VehicleSimulationComponent->PhysicsAdapter = Adapter;

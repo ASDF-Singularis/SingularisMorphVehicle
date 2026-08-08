@@ -47,8 +47,9 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshotE
 	TObjectPtr<USingularisMorphVehicleSUComponent> SUComponent = nullptr;
 
 	/**
-	 * 集群内粒子索引。
-	 * 用于定位 ChildParticles 数组中的 ChildToParent 变换。
+	 * 集群子粒子的真实唯一索引（FUniqueIdx::Idx）。
+	 * 用于模块粒子匹配（GetClusterParticle），
+	 * 而非 ChildParticles 数组下标——两者通常不同。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 ParticleIndex = INDEX_NONE;
