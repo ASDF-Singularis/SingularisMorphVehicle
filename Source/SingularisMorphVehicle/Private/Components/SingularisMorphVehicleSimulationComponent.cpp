@@ -10,12 +10,11 @@
 #include "Components/SingularisMorphVehicleClutchSUComponent.h"
 #include "Components/SingularisMorphVehicleEngineSUComponent.h"
 #include "Components/SingularisMorphVehicleSUComponent.h"
-#include "Components/SingularisMorphVehicleSuspensionSUComponent.h"
 #include "Components/SingularisMorphVehicleTransmissionSUComponent.h"
-#include "Components/SingularisMorphVehicleWheelSUComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "Interfaces/SingularisMorphVehicleBaseInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
+#include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 #include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogSingularisMorphBase);
@@ -185,18 +184,29 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 {
 	if (!VehicleSimulationPT) return;
 
-	// 0) 底盘守卫：快照中必须存在 Chassis 才能重建。
+	// 解析映射子系统：SU 组件的查询统一由映射完成
+	const UWorld* World = GetWorld();
+	const USingularisMorphVehicleMappingSubsystem* Subsystem =
+		World ? World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>() : nullptr;
+	if (!Subsystem) return;
+
+	// 0) 底盘守卫：映射结果中必须存在 Chassis 类型的 SU 才能重建。
 	//    车身件脱离集群（载具解体）后，直接清除全部模拟模块：
 	//    释放悬挂约束、移除树节点、清空缓存，剩余部件作为独立碎片由物理引擎接管。
 	bool bHasChassis = false;
 	for (const auto& Entity : Snapshot.Entities)
 	{
-		if (Entity.SUComponent &&
-			Entity.SUComponent->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
+		if (!Entity.PrimitiveComponent) continue;
+		for (USingularisMorphVehicleSUComponent* SUComp :
+			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
-			bHasChassis = true;
-			break;
+			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
+			{
+				bHasChassis = true;
+				break;
+			}
 		}
+		if (bHasChassis) break;
 	}
 	if (!bHasChassis)
 	{
@@ -260,45 +270,22 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	if (RootPhysicsObject == nullptr)
 		CacheRootPhysicsObject(GetPhysicsProxy());
 
-	// 3) 构建 SUComponent → Entity 快速查找表
-	TMap<TObjectPtr<USingularisMorphVehicleSUComponent>, const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity*>
+	// 3) 构建 物理组件 → Entity 快速查找表
+	//    实体只描述物理信息；SU 组件由各 Pass 通过映射子系统在实体上展开。
+	TMap<TObjectPtr<UPrimitiveComponent>, const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity*>
 		EntityMap;
 	for (const auto& Entity : Snapshot.Entities)
 	{
-		if (Entity.SUComponent)
-			EntityMap.Add(Entity.SUComponent, &Entity);
+		if (Entity.PrimitiveComponent)
+			EntityMap.Add(Entity.PrimitiveComponent, &Entity);
 	}
 
-	// 3a) 从 Wheel 的 LinkedSuspension 收集不在快照中的悬挂组件
-	//     悬挂是纯仿真模块，非集群物理子节点，不出现在快照中。
-	TArray<FSingularisMorphVehiclePhysicsAdapterSnapshotEntity> SynthesizedEntities;
-	TSet<USingularisMorphVehicleSuspensionSUComponent*> SynthesizedSuspensions;
-	for (const auto& Entity : Snapshot.Entities)
-	{
-		auto* WheelSU = Cast<USingularisMorphVehicleWheelSUComponent>(Entity.SUComponent);
-		if (!WheelSU) continue;
-		if (auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(
-			WheelSU->LinkedSuspension.GetComponent(Owner)
-		))
-		{
-			if (!EntityMap.Contains(SuspSU))
-			{
-				// 合成悬挂实体：位置与粒子直接复用所挂车轮的集群数据。
-				// 悬挂是纯仿真模块（无自己的集群粒子），其射线起点、弹簧力作用点
-				// 以及动画目标都必须落在车轮位置，否则弹簧力全部作用在质心、
-				// 车辆表现为无法模拟的刚体（参考原版：悬挂 ProxyComponent 指向车轮网格）。
-				FSingularisMorphVehiclePhysicsAdapterSnapshotEntity SynthEntity;
-				SynthEntity.SUComponent = SuspSU;
-				SynthEntity.ParticleIndex = Entity.ParticleIndex;
-				SynthEntity.ChildToParent = Entity.ChildToParent;
-				SynthesizedEntities.Emplace(MoveTemp(SynthEntity));
-				SynthesizedSuspensions.Add(SuspSU);
-				EntityMap.Add(SynthesizedEntities.Last().SUComponent, &SynthesizedEntities.Last());
-			}
-		}
-	}
-
-	// 4) 核心 Lambda：将快照实体注册到模拟树
+	// 4) 核心 Lambda：将单个 SU 注册到模拟树。
+	//    统一通过 SU 的 ProxyComponent 解析物理组件：
+	//    - 物理组件在快照实体中（集群子粒子）→ 复用其粒子索引与集群变换；
+	//    - 不在快照中（纯仿真模块）→ 粒子无效，变换取自身相对变换。
+	//    悬挂的 ProxyComponent 由资产配置决定：无悬挂实体时指向车轮网格
+	//    （复用车轮的粒子/位置），有悬挂实体时指向悬挂自身。
 	TMap<ESingularisMorphVehicleModuleType, int32> TypeToTreeIndex;
 	TSet<USingularisMorphVehicleSUComponent*> ProcessedComponents;
 
@@ -306,46 +293,20 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!SUComp || ProcessedComponents.Contains(SUComp)) return INDEX_NONE;
 
-		const auto* Found = EntityMap.Find(SUComp);
-		if (!Found) return INDEX_NONE;
-		const auto& Entity = **Found;
-
 		Chaos::ISimulationModuleBase* CoreModule = SUComp->CreateNewCoreModule();
 		if (!CoreModule) return INDEX_NONE;
 
 		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
 			SUComp->ProxyComponent.GetComponent(Owner)
 		);
-
-		// 悬挂模块：代理组件回退到所挂车轮的网格组件。
-		// 资产中的悬挂 SU 未配置 ProxyComponent，空引用会解析到根组件（ClusterUnion），
-		// 导致悬挂模块位于原点（射线/受力点错误）且动画直接写入根组件（整车被拽到地下并抽搐）。
-		// 仅对合成悬挂（无自身集群粒子）回退，已显式配置代理的悬挂不受影响。
-		if (auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(SUComp))
-		{
-			if (SynthesizedSuspensions.Contains(SuspSU))
-			{
-				for (const auto& WheelEntity : Snapshot.Entities)
-				{
-					auto* WheelSU = Cast<USingularisMorphVehicleWheelSUComponent>(WheelEntity.SUComponent);
-					if (!WheelSU) continue;
-					if (WheelSU->LinkedSuspension.GetComponent(Owner) != SuspSU) continue;
-					if (UPrimitiveComponent* WheelProxy = Cast<UPrimitiveComponent>(
-						WheelSU->ProxyComponent.GetComponent(Owner)
-					))
-					{
-						ProxyComp = WheelProxy;
-						break;
-					}
-				}
-			}
-		}
-
 		if (!ProxyComp)
 		{
 			delete CoreModule;
 			return INDEX_NONE;
 		}
+
+		// 物理组件若在快照实体中，复用其粒子索引与 ChildToParent；否则为纯仿真模块
+		const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity* Entity = EntityMap[ProxyComp];
 
 		FTransform CompTransform = ProxyComp->GetComponentTransform().GetRelativeTransform(
 			ReferenceTransform
@@ -359,8 +320,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			CompTransform,
 			ParentIndex,
 			TransformIndex,
-			Chaos::FUniqueIdx(Entity.ParticleIndex),
-			Entity.ChildToParent
+			Entity ? Chaos::FUniqueIdx(Entity->ParticleIndex) : Chaos::FUniqueIdx(),
+			Entity ? Entity->ChildToParent : FTransform::Identity
 		);
 
 		if (ModuleIdx != INDEX_NONE)
@@ -379,92 +340,110 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	};
 
 	// 5) 按确定性顺序重建物理模拟树
+	//    同一物理组件可展开出多个 SU（映射列表），各 Pass 独立按类型过滤。
 
 	// 5a) Pass 1: Chassis → root
 	int32 ChassisIndex = INDEX_NONE;
 	for (const auto& Entity : Snapshot.Entities)
 	{
-		if (Entity.SUComponent && Entity.SUComponent->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
+		if (!Entity.PrimitiveComponent) continue;
+		for (USingularisMorphVehicleSUComponent* SUComp :
+			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
-			ChassisIndex = AddEntity(Entity.SUComponent, INDEX_NONE);
-			break;
+			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
+			{
+				ChassisIndex = AddEntity(SUComp, INDEX_NONE);
+				break;
+			}
 		}
+		if (ChassisIndex != INDEX_NONE) break;
 	}
 
 	// 5b) Pass 2: Engine → Clutch → Transmission 动力链（通过 Linked 引用串联）
 	for (const auto& Entity : Snapshot.Entities)
 	{
-		if (!Entity.SUComponent) continue;
-		if (Entity.SUComponent->GetModuleType() != ESingularisMorphVehicleModuleType::Engine) continue;
-
-		const int32 EngineIndex = AddEntity(Entity.SUComponent, ChassisIndex);
-		if (EngineIndex == INDEX_NONE) continue;
-
-		auto* EngineSU = Cast<USingularisMorphVehicleEngineSUComponent>(Entity.SUComponent);
-		if (!EngineSU) continue;
-
-		if (auto* ClutchSU = Cast<USingularisMorphVehicleClutchSUComponent>(
-			EngineSU->LinkedClutch.GetComponent(Owner)
-		))
+		if (!Entity.PrimitiveComponent) continue;
+		for (USingularisMorphVehicleSUComponent* SUComp :
+			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
-			const int32 ClutchIndex = AddEntity(ClutchSU, EngineIndex);
+			if (!SUComp || SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Engine) continue;
 
-			if (auto* TransSU = Cast<USingularisMorphVehicleTransmissionSUComponent>(
-				ClutchSU->LinkedTransmission.GetComponent(Owner)
+			const int32 EngineIndex = AddEntity(SUComp, ChassisIndex);
+			if (EngineIndex == INDEX_NONE) continue;
+
+			auto* EngineSU = Cast<USingularisMorphVehicleEngineSUComponent>(SUComp);
+			if (!EngineSU) continue;
+
+			if (auto* ClutchSU = Cast<USingularisMorphVehicleClutchSUComponent>(
+				EngineSU->LinkedClutch.GetComponent(Owner)
 			))
 			{
-				AddEntity(TransSU, ClutchIndex);
+				const int32 ClutchIndex = AddEntity(ClutchSU, EngineIndex);
+
+				if (auto* TransSU = Cast<USingularisMorphVehicleTransmissionSUComponent>(
+					ClutchSU->LinkedTransmission.GetComponent(Owner)
+				))
+				{
+					AddEntity(TransSU, ClutchIndex);
+				}
 			}
 		}
 	}
 
-	// 5c) Pass 3: Suspension → Chassis（合成实体，源自 Wheel 的 LinkedSuspension）
-	//     记录 Susp→Index 映射供 Wheel 查找父节点
-	TMap<USingularisMorphVehicleSuspensionSUComponent*, int32> SuspensionIndexMap;
-	for (const auto& SynthEntity : SynthesizedEntities)
-	{
-		auto* SuspSU = Cast<USingularisMorphVehicleSuspensionSUComponent>(SynthEntity.SUComponent);
-		if (!SuspSU) continue;
-
-		const int32 SuspIndex = AddEntity(SuspSU, ChassisIndex);
-		SuspensionIndexMap.Add(SuspSU, SuspIndex);
-	}
-
-	// 5d) Pass 4: Wheel → LinkedSuspension（有则挂悬架下，否则挂 Chassis 下）
+	// 5c) Pass 3: Suspension → Chassis
+	//     记录 物理组件 → 悬挂索引，供同一物理组件上的轮子查找父节点
+	TMap<TObjectPtr<UPrimitiveComponent>, int32> SuspensionIndexByComponent;
 	for (const auto& Entity : Snapshot.Entities)
 	{
-		if (!Entity.SUComponent) continue;
-		if (Entity.SUComponent->GetModuleType() != ESingularisMorphVehicleModuleType::Wheel) continue;
-
-		auto* WheelSU = Cast<USingularisMorphVehicleWheelSUComponent>(Entity.SUComponent);
-		if (!WheelSU) continue;
-
-		int32 ParentIdx = ChassisIndex;
-		if (auto* LinkedSusp = Cast<USingularisMorphVehicleSuspensionSUComponent>(
-			WheelSU->LinkedSuspension.GetComponent(Owner)
-		))
+		if (!Entity.PrimitiveComponent) continue;
+		for (USingularisMorphVehicleSUComponent* SUComp :
+			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
-			if (const int32* FoundIdx = SuspensionIndexMap.Find(LinkedSusp))
-				ParentIdx = *FoundIdx;
+			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Suspension)
+			{
+				const int32 SuspIndex = AddEntity(SUComp, ChassisIndex);
+				if (SuspIndex != INDEX_NONE)
+					SuspensionIndexByComponent.FindOrAdd(Entity.PrimitiveComponent) = SuspIndex;
+			}
 		}
+	}
 
-		AddEntity(WheelSU, ParentIdx);
+	// 5d) Pass 4: Wheel → 同一物理组件上的悬挂下（无则挂 Chassis 下）
+	for (const auto& Entity : Snapshot.Entities)
+	{
+		if (!Entity.PrimitiveComponent) continue;
+		for (USingularisMorphVehicleSUComponent* SUComp :
+			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		{
+			if (!SUComp || SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Wheel) continue;
+
+			int32 ParentIdx = ChassisIndex;
+			if (const int32* FoundIdx = SuspensionIndexByComponent.Find(Entity.PrimitiveComponent))
+				ParentIdx = *FoundIdx;
+
+			AddEntity(SUComp, ParentIdx);
+		}
 	}
 
 	// 5e) Pass 5: 其余模块（Aerofoil、Thruster 等）→ Chassis
 	for (const auto& Entity : Snapshot.Entities)
 	{
-		if (!Entity.SUComponent) continue;
-		const ESingularisMorphVehicleModuleType Type = Entity.SUComponent->GetModuleType();
-		if (Type == ESingularisMorphVehicleModuleType::Chassis ||
-			Type == ESingularisMorphVehicleModuleType::Engine ||
-			Type == ESingularisMorphVehicleModuleType::Clutch ||
-			Type == ESingularisMorphVehicleModuleType::Transmission ||
-			Type == ESingularisMorphVehicleModuleType::Suspension ||
-			Type == ESingularisMorphVehicleModuleType::Wheel)
-			continue;
+		if (!Entity.PrimitiveComponent) continue;
+		for (USingularisMorphVehicleSUComponent* SUComp :
+			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		{
+			if (!SUComp) continue;
+			const ESingularisMorphVehicleModuleType Type = SUComp->GetModuleType();
+			if (Type == ESingularisMorphVehicleModuleType::Chassis ||
+				Type == ESingularisMorphVehicleModuleType::Engine ||
+				Type == ESingularisMorphVehicleModuleType::Clutch ||
+				Type == ESingularisMorphVehicleModuleType::Transmission ||
+				Type == ESingularisMorphVehicleModuleType::Suspension ||
+				Type == ESingularisMorphVehicleModuleType::Wheel)
+				continue;
 
-		AddEntity(Entity.SUComponent, ChassisIndex);
+			AddEntity(SUComp, ChassisIndex);
+		}
 	}
 
 	// 6) 批量提交到物理线程

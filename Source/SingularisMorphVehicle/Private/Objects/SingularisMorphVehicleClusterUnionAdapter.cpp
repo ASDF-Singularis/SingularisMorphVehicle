@@ -5,9 +5,7 @@
 #include <PhysicsEngine/ClusterUnionComponent.h>
 
 #include "Components/SingularisMorphVehicleClusterUnionComponent.h"
-#include "Components/SingularisMorphVehicleSUComponent.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
-#include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 
 void USingularisMorphVehicleClusterUnionAdapter::Initialize(const FSingularisMorphVehiclePhysicsAdapterContext& Context)
 {
@@ -86,19 +84,18 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 	const auto& ChildParticles = Proxy->GetSyncedData_External().ChildParticles;
 	if (ChildParticles.IsEmpty()) return {};
 
-	// 2) 获取 Subsystem 用于物理组件到 SU 组件的映射
+	// 2) 获取物理场景，用于粒子代理反查所属组件
 	const UWorld* World = GetWorld();
 	if (!World) return {};
-	const USingularisMorphVehicleMappingSubsystem* Subsystem =
-		World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>();
-	if (!Subsystem) return {};
 	FPhysScene* PhysScene = World->GetPhysicsScene();
 	if (!PhysScene) return {};
 
-	// 3) 遍历集群子粒子，通过粒子代理反查所属组件后构建完整快照。
+	// 3) 遍历集群子粒子，通过粒子代理反查所属物理组件后构建完整快照。
+	//    实体只描述物理信息（组件 + 粒子数据），SU 组件的查询由消费端
+	//    （SimulationComponent）通过 MappingSubsystem 统一完成。
 	//    不能按数组下标与场景子组件（GetChildrenComponents）配对：
 	//    集群断裂/部件移除后，ChildParticles 的顺序与场景子组件不再一致，
-	//    按下标配对会让 SU 组件拿到其它粒子的索引与变换（车轮错位、抖动、飞散）。
+	//    按下标配对会让组件拿到其它粒子的索引与变换（车轮错位、抖动、飞散）。
 	FSingularisMorphVehiclePhysicsAdapterSnapshot Snapshot;
 	Snapshot.Entities.Reserve(ChildParticles.Num());
 
@@ -109,22 +106,15 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 			PrimComp = PhysScene->GetOwningComponent<UPrimitiveComponent>(ChildData.Proxy);
 		if (!PrimComp) continue;
 
-		// 一个物理组件可对应多个 SU（骨骼网格体的多个物理体/骨骼各挂一个模拟单元），
-		// 为每个有效 SU 生成一个快照实体，共享同一粒子的索引与变换。
-		for (USingularisMorphVehicleSUComponent* SUComp : Subsystem->FindSUComponents(PrimComp))
-		{
-			if (!SUComp) continue;
+		FSingularisMorphVehiclePhysicsAdapterSnapshotEntity Entity;
+		Entity.PrimitiveComponent = PrimComp;
+		// 写入粒子的真实唯一索引（而非数组下标）：
+		// 模块通过 ParticleIdx 在集群中查找自身粒子（GetClusterParticle），
+		// 若使用数组下标会匹配不到粒子，甚至错配到其它子粒子，导致车轮/悬挂动画与受力失效。
+		Entity.ParticleIndex = ChildData.ParticleIdx.Idx;
+		Entity.ChildToParent = ChildData.ChildToParent;
 
-			FSingularisMorphVehiclePhysicsAdapterSnapshotEntity Entity;
-			Entity.SUComponent = SUComp;
-			// 写入粒子的真实唯一索引（而非数组下标）：
-			// 模块通过 ParticleIdx 在集群中查找自身粒子（GetClusterParticle），
-			// 若使用数组下标会匹配不到粒子，甚至错配到其它子粒子，导致车轮/悬挂动画与受力失效。
-			Entity.ParticleIndex = ChildData.ParticleIdx.Idx;
-			Entity.ChildToParent = ChildData.ChildToParent;
-
-			Snapshot.Entities.Emplace(MoveTemp(Entity));
-		}
+		Snapshot.Entities.Emplace(MoveTemp(Entity));
 	}
 
 	// 4) 清除脏标记

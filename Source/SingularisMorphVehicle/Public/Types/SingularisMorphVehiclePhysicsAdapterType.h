@@ -31,6 +31,8 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterContext
  * 适配器在集群变更后重建完整快照，
  * 由 SimulationComponent 在 PreTickGT 中通过 ConsumeSnapshot 拉取并全量重建模拟树。
  *
+ * 实体只描述物理侧信息（组件 + 粒子）；SU 组件的查询与模块化参数
+ * 由 SimulationComponent 通过 MappingSubsystem 统一完成。
  * 物理模拟树结构由模块类型确定，全量重建保证父子关系正确性。
  */
 USTRUCT(BlueprintType)
@@ -39,12 +41,12 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshotE
 	GENERATED_BODY()
 
 	/**
-	 * 集群中物理组件对应的 SU 模块组件。
-	 * 由适配器在构建快照时通过 Subsystem 完成映射，
-	 * 消费端直接使用，无需二次查找。
+	 * 集群中该粒子的物理组件。
+	 * 由适配器通过粒子代理反查得到，作为唯一标识与变换/粒子数据的载体。
+	 * SU 组件的查询由消费端通过 MappingSubsystem 完成。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TObjectPtr<USingularisMorphVehicleSUComponent> SUComponent = nullptr;
+	TObjectPtr<UPrimitiveComponent> PrimitiveComponent = nullptr;
 
 	/**
 	 * 集群子粒子的真实唯一索引（FUniqueIdx::Idx）。
