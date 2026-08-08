@@ -52,7 +52,8 @@ void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndP
 				{
 					if (USingularisMorphVehicleMappingSubsystem* Subsystem =
 						World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>())
-						Subsystem->UnregisterComponentMapping(PrimComp);
+						// 仅注销自身条目，避免共享同一物理组件的其它 SU 被误清除
+						Subsystem->UnregisterComponentMapping(PrimComp, this);
 				}
 			}
 		}

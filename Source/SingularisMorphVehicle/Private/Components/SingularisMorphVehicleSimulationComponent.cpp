@@ -2,8 +2,10 @@
 
 #include <Engine/World.h>
 #include <GameFramework/WorldSettings.h>
+#include <PhysicsEngine/BodyInstance.h>
 #include <PhysicsProxy/ClusterUnionPhysicsProxy.h>
 #include <PhysicsProxy/SingleParticlePhysicsProxy.h>
+#include <SimModule/SimulationModuleBase.h>
 
 #include "Components/SingularisMorphVehicleClutchSUComponent.h"
 #include "Components/SingularisMorphVehicleEngineSUComponent.h"
@@ -131,6 +133,30 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 {
 	if (ModuleGuid == INDEX_NONE) return;
 
+	// 通知旧模块终止：释放悬挂约束等外部资源。
+	// FSimModuleTree::DeleteNode 只 delete 模块对象，不会调用 OnTermination_External，
+	// 若不在此释放，每次重建都会泄漏物理悬挂约束，
+	// 旧约束会持续对集群根粒子施加力，导致抖动与车轮飞散。
+	if (VehicleSimulationPT)
+	{
+		if (Chaos::FSimModuleTree* SimTree = VehicleSimulationPT->AccessSimComponentTree().Get())
+		{
+			for (int32 N = 0; N < SimTree->GetNumNodes(); N++)
+			{
+				if (Chaos::ISimulationModuleBase* Mod = SimTree->GetNode(N).SimModule)
+				{
+					if (Mod->GetGuid() == ModuleGuid)
+					{
+						Mod->SetAnimationEnabled(false);
+						Mod->SetStateFlags(Chaos::eSimModuleState::Disabled);
+						Mod->OnTermination_External();
+						break;
+					}
+				}
+			}
+		}
+	}
+
 	StoredTreeUpdates.RemoveNode(ModuleGuid);
 }
 
@@ -157,8 +183,48 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	const FSingularisMorphVehiclePhysicsAdapterSnapshot& Snapshot
 )
 {
-	if (Snapshot.IsEmpty()) return;
 	if (!VehicleSimulationPT) return;
+
+	// 0) 底盘守卫：快照中必须存在 Chassis 才能重建。
+	//    车身件脱离集群（载具解体）后，直接清除全部模拟模块：
+	//    释放悬挂约束、移除树节点、清空缓存，剩余部件作为独立碎片由物理引擎接管。
+	bool bHasChassis = false;
+	for (const auto& Entity : Snapshot.Entities)
+	{
+		if (Entity.SUComponent &&
+			Entity.SUComponent->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
+		{
+			bHasChassis = true;
+			break;
+		}
+	}
+	if (!bHasChassis)
+	{
+		UE_LOG(
+			LogSingularisMorphBase,
+			Warning,
+			TEXT("[RebuildFromSnapshot] Chassis not found in snapshot (%d entities) - clearing all simulation modules"),
+			Snapshot.Entities.Num()
+		);
+
+		// 1) 逐个移除旧模块（内部会释放悬挂约束等外部资源）
+		TArray<int32> ExistingGuids;
+		for (const auto& Pair : ComponentToPhysicsObjects)
+			ExistingGuids.Add(Pair.Value.Guid);
+		for (int32 Guid : ExistingGuids)
+			RemoveSimulationModule(Guid);
+
+		// 2) 清空所有缓存，保证幂等
+		ComponentToPhysicsObjects.Empty();
+		PhysicsGuidToComponent.Empty();
+		ModuleAnimationSetups.Empty();
+		NextConstructionIndex = 0;
+
+		// 3) 提交删除到物理线程
+		UpdatePhysicalProperties();
+		FinalizeModuleUpdates();
+		return;
+	}
 
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner)) return;
