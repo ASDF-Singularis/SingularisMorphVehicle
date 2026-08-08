@@ -28,12 +28,12 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 
 	bAutoActivate = true;
 
+	SuspensionTraceCollisionResponses.SetAllChannels(ECR_Block);
+	SuspensionTraceCollisionResponses.SetResponse(ECC_Vehicle, ECR_Ignore);
+	SuspensionTraceCollisionResponses.SetResponse(ECC_EngineTraceChannel1, ECR_Ignore);
+	
 	bUsingNetworkPhysicsPrediction = Chaos::FPhysicsSolverBase::IsNetworkPhysicsPredictionEnabled();
 	CurrentAsyncDataType = AsyncInvalid;
-
-	// 默认悬挂射线响应：对 WorldStatic 阻挡（否则射线全部 Ignore，悬挂无法检测地面）
-	SuspensionTraceCollisionResponses.SetAllChannels(ECR_Ignore);
-	SuspensionTraceCollisionResponses.SetResponse(ECC_WorldStatic, ECR_Block);
 }
 
 void USingularisMorphVehicleSimulationComponent::BeginPlay()
