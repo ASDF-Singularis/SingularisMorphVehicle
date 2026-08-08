@@ -281,10 +281,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 4) 核心 Lambda：将单个 SU 注册到模拟树。
-	//    统一通过 SU 的 ProxyComponent 解析物理组件：
+	//    统一通过 SU 的 DrivenComponent 解析物理组件：
 	//    - 物理组件在快照实体中（集群子粒子）→ 复用其粒子索引与集群变换；
 	//    - 不在快照中（纯仿真模块）→ 粒子无效，变换取自身相对变换。
-	//    悬挂的 ProxyComponent 由资产配置决定：无悬挂实体时指向车轮网格
+	//    悬挂的 DrivenComponent 由资产配置决定：无悬挂实体时指向车轮网格
 	//    （复用车轮的粒子/位置），有悬挂实体时指向悬挂自身。
 	TMap<ESingularisMorphVehicleModuleType, int32> TypeToTreeIndex;
 	TSet<USingularisMorphVehicleSUComponent*> ProcessedComponents;
@@ -297,7 +297,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (!CoreModule) return INDEX_NONE;
 
 		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
-			SUComp->ProxyComponent.GetComponent(Owner)
+			SUComp->DrivenComponent.GetComponent(Owner)
 		);
 		if (!ProxyComp)
 		{

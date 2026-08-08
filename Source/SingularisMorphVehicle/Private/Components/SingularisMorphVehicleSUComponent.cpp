@@ -25,7 +25,7 @@ void USingularisMorphVehicleSUComponent::BeginPlay()
 	if (!IsValid(Owner)) return;
 
 
-	if (USceneComponent* ResolvedComp = Cast<USceneComponent>(ProxyComponent.GetComponent(Owner)))
+	if (USceneComponent* ResolvedComp = Cast<USceneComponent>(DrivenComponent.GetComponent(Owner)))
 	{
 		if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(ResolvedComp))
 		{
@@ -44,7 +44,7 @@ void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndP
 	AActor* Owner = GetOwner();
 	if (IsValid(Owner))
 	{
-		if (USceneComponent* ResolvedComp = Cast<USceneComponent>(ProxyComponent.GetComponent(Owner)))
+		if (USceneComponent* ResolvedComp = Cast<USceneComponent>(DrivenComponent.GetComponent(Owner)))
 		{
 			if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(ResolvedComp))
 			{

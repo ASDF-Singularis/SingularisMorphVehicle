@@ -58,14 +58,14 @@ public:
 	)
 	TArray<FModuleInputSetup> InputConfig{};
 
-	/** 代理组件引用：承载此模块动画输出的场景组件，同时作为空间变换的数据源 */
+	/** 驱动组件引用 */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
 		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|代理",
-		meta = (DisplayName = "代理组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
+		meta = (DisplayName = "驱动组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
 	)
-	FComponentReference ProxyComponent{};
+	FComponentReference DrivenComponent{};
 
 	/** 叠加在代理组件变换之上的额外偏移量（有代理组件时为增量偏移，无代理组件时作为绝对变换） */
 	UPROPERTY(
