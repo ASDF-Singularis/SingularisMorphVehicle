@@ -15,7 +15,7 @@
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点变型载具集群联合组件")
 )
 class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleClusterUnionComponent : public UClusterUnionComponent

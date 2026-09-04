@@ -2,7 +2,7 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisSUComponent.h"
+#include "SingularisMorphVehicleSUComponent.h"
 #include "SingularisSuspensionSUComponent.generated.h"
 
 /**
@@ -14,10 +14,10 @@
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点悬挂仿真单元组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisSuspensionSUComponent : public USingularisSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisSuspensionSUComponent : public USingularisMorphVehicleSUComponent
 {
 	GENERATED_BODY()
 
@@ -38,18 +38,18 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点悬挂仿真单元|行程",
-		meta = (DisplayName = "最大抬起")
+		meta = (DisplayName = "悬挂最大上升")
 	)
-	float SuspensionMaxRaise = 5.0f;
+	float SuspensionMaxRaise = 10.0f;
 
 	/** 悬挂最大下压距离（厘米） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点悬挂仿真单元|行程",
-		meta = (DisplayName = "最大下压")
+		meta = (DisplayName = "悬挂最大下降")
 	)
-	float SuspensionMaxDrop = 5.0f;
+	float SuspensionMaxDrop = 30.0f;
 
 	/** 弹簧劲度系数 */
 	UPROPERTY(
@@ -58,7 +58,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点悬挂仿真单元|弹簧力学",
 		meta = (DisplayName = "弹簧劲度")
 	)
-	float SpringRate = 100.0f;
+	float SpringRate = 200.0f;
 
 	/** 弹簧预载力 */
 	UPROPERTY(

@@ -2,7 +2,6 @@
 
 #include "Iris/ReplicationSystem/NetTokenStructDefines.h"
 #include "Iris/ReplicationSystem/StructNetTokenDataStore.h"
-#include "Net/Iris/ReplicationSystem/StructNetTokenDataStoreHelper.h"
 #include "SimModule/ModuleInput.h"
 #include "SingularisMorphModuleInputTokenStore.generated.h"
 

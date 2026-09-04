@@ -7,7 +7,6 @@
 #include <Chaos/SimCallbackObject.h>
 #include <Iris/ReplicationSystem/NetTokenStructDefines.h>
 #include <Iris/ReplicationSystem/StructNetTokenDataStore.h>
-#include <Net/Iris/ReplicationSystem/StructNetTokenDataStoreHelper.h>
 #include <Physics/NetworkPhysicsComponent.h>
 #include <SimModule/ModuleInput.h>
 #include <SimModule/SimulationModuleBase.h>

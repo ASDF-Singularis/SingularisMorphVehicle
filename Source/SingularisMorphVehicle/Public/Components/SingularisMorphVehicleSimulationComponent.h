@@ -30,7 +30,7 @@ class USingularisMorphVehiclePhysicsAdapter;
 class IPhysicsProxyBase;
 class AHUD;
 class UCanvas;
-class USingularisSUComponent;
+class USingularisMorphVehicleSUComponent;
 class USingularisSuspensionSUComponent;
 class USingularisWheelSUComponent;
 
@@ -87,7 +87,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点变型载具仿真组件")
 )
 class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSimulationComponent : public UActorComponent
@@ -156,7 +156,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|阻尼",
 		meta = (DisplayName = "角阻尼")
 	)
-	float AngularDamping = 0.0f;
+	float AngularDamping = 0.5f;
 
 	/** 悬挂射线检测通道 */
 	UPROPERTY(
@@ -183,7 +183,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
 		meta = (DisplayName = "悬挂射线复杂碰撞")
 	)
-	bool bSuspensionTraceComplex = false;
+	bool bSuspensionTraceComplex = true;
 
 	/** 悬挂射线类型 */
 	UPROPERTY(

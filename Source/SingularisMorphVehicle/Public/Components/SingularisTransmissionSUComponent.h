@@ -2,7 +2,7 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisSUComponent.h"
+#include "SingularisMorphVehicleSUComponent.h"
 #include "SingularisTransmissionSUComponent.generated.h"
 
 #pragma region 委托签名
@@ -22,10 +22,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGearChange, int32, Guid, int32, 
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点变速箱仿真单元组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisTransmissionSUComponent : public USingularisSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisTransmissionSUComponent : public USingularisMorphVehicleSUComponent
 {
 	GENERATED_BODY()
 
@@ -153,7 +153,7 @@ public:
 	}
 
 	virtual void OnOutputReady(const Chaos::FSimOutputData* OutputData) override;
-	
+
 	virtual Chaos::ISimulationModuleBase* CreateNewCoreModule() const override;
 
 #pragma endregion

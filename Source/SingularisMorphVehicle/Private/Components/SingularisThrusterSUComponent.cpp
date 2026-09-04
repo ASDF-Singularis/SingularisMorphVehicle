@@ -1,6 +1,5 @@
 #include "Components/SingularisThrusterSUComponent.h"
 
-#include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisThrusterSUComponent)

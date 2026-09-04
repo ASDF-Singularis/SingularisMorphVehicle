@@ -4,11 +4,8 @@
 #include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
-#include "GeometryCollection/GeometryCollectionParticlesData.h"
 #include "Net/Core/NetBitArray.h"
 #include "Net/Iris/ReplicationSystem/StructNetTokenDataStoreHelper.h"
-#include "PhysicsProxy/ClusterUnionPhysicsProxy.h"
-#include "PhysicsProxy/GeometryCollectionPhysicsProxy.h"
 #include "SimModule/ModuleFactoryRegister.h"
 #include "Types/SingularisMorphModuleInputTokenStore.h"
 

@@ -5,7 +5,7 @@
 
 #include "SingularisMorphVehiclePhysicsAdapterType.generated.h"
 
-class USingularisSUComponent;
+class USingularisMorphVehicleSUComponent;
 class USingularisMorphVehicleSimulationComponent;
 
 /**

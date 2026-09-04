@@ -2,7 +2,7 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisSUComponent.h"
+#include "SingularisMorphVehicleSUComponent.h"
 #include "SingularisWheelSUComponent.generated.h"
 
 #pragma region 委托签名
@@ -23,15 +23,28 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWheelTouchChange, int32, Guid, b
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点车轮仿真单元组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisWheelSUComponent : public USingularisSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisWheelSUComponent : public USingularisMorphVehicleSUComponent
 {
 	GENERATED_BODY()
 
 public:
 #pragma region Parameter
+
+	/** 链接的悬挂组件（单向引用） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元",
+		meta = (
+			DisplayName = "链接悬挂",
+			UseComponentPicker,
+			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisSuspensionSUComponent"
+		)
+	)
+	FComponentReference LinkedSuspension{};
 
 	/** 车轮半径（厘米） */
 	UPROPERTY(
@@ -58,7 +71,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
 		meta = (DisplayName = "轴向类型")
 	)
-	ESingularisMorphVehicleWheelAxisType AxisType = ESingularisMorphVehicleWheelAxisType::Y;
+	ESingularisMorphVehicleWheelAxisType AxisType = ESingularisMorphVehicleWheelAxisType::X;
 
 	/** 车轮转动惯性 */
 	UPROPERTY(
@@ -177,19 +190,6 @@ public:
 	)
 	bool ReverseDirection = false;
 
-	/** 链接的悬挂组件（单向引用） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元",
-		meta = (
-			DisplayName = "链接悬挂",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisMorphVehicleSuspensionComponent"
-		)
-	)
-	FComponentReference LinkedSuspension{};
-
 #pragma endregion
 
 #pragma region 事件分发器
@@ -221,7 +221,7 @@ public:
 	}
 
 	virtual void OnOutputReady(const Chaos::FSimOutputData* OutputData) override;
-	
+
 	virtual Chaos::ISimulationModuleBase* CreateNewCoreModule() const override;
 
 #pragma endregion

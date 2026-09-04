@@ -3,7 +3,7 @@
 #include <CoreMinimal.h>
 #include <VehicleUtility.h>
 
-#include "SingularisSUComponent.h"
+#include "SingularisMorphVehicleSUComponent.h"
 #include "SingularisChassisSUComponent.generated.h"
 
 /**
@@ -15,10 +15,10 @@
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点底盘仿真单元组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisChassisSUComponent : public USingularisSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisChassisSUComponent : public USingularisMorphVehicleSUComponent
 {
 	GENERATED_BODY()
 

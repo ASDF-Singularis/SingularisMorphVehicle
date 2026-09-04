@@ -10,7 +10,7 @@ class USingularisMorphVehicleSimulationComponent;
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点变型载具调度器组件")
 )
 class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSchedulerComponent : public UActorComponent

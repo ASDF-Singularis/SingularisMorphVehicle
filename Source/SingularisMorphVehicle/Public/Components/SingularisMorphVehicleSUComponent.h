@@ -5,17 +5,17 @@
 #include <SimModule/ModuleInput.h>
 
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
-#include "SingularisSUComponent.generated.h"
+#include "SingularisMorphVehicleSUComponent.generated.h"
 
 /**
- * 引力奇点基础仿真单元组件
+ * 引力奇点变形载具基础仿真单元组件
  *
  * 继承自 UActorComponent，作为纯数据配置容器为载具模拟模块提供实现基类。
  * 通过显式引用字段关联视觉组件与上下游模块，不再依赖 SceneComponent 附着层级。
  */
 UCLASS(Abstract, Blueprintable)
-class SINGULARISMORPHVEHICLE_API USingularisSUComponent : public UActorComponent,
-                                                          public ISingularisMorphVehicleSUInterface
+class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSUComponent : public UActorComponent,
+                                                                      public ISingularisMorphVehicleSUInterface
 {
 	GENERATED_BODY()
 
@@ -97,7 +97,7 @@ private:
 public:
 #pragma region Constructors
 
-	USingularisSUComponent();
+	USingularisMorphVehicleSUComponent();
 
 #pragma endregion
 

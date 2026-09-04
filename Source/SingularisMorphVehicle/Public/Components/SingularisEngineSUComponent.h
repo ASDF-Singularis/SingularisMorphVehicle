@@ -3,7 +3,7 @@
 #include <CoreMinimal.h>
 #include <Curves/CurveFloat.h>
 
-#include "SingularisSUComponent.h"
+#include "SingularisMorphVehicleSUComponent.h"
 #include "SingularisEngineSUComponent.generated.h"
 
 /**
@@ -15,10 +15,10 @@
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点引擎仿真单元组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisEngineSUComponent : public USingularisSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisEngineSUComponent : public USingularisMorphVehicleSUComponent
 {
 	GENERATED_BODY()
 
@@ -108,7 +108,7 @@ public:
 	}
 
 	virtual void OnOutputReady(const Chaos::FSimOutputData* OutputData) override;
-	
+
 	virtual Chaos::ISimulationModuleBase* CreateNewCoreModule() const override;
 
 #pragma endregion

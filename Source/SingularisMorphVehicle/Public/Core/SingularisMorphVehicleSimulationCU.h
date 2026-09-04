@@ -4,11 +4,9 @@
 #include <Misc/ScopeRWLock.h>
 #include <Misc/TransactionallySafeRWLock.h>
 
-#include "SingularisMorphVehicleBuilder.h"
 #include "Chaos/ParticleHandle.h"
 #include "Chaos/ParticleHandleFwd.h"
 #include "SimModule/SimModuleTree.h"
-#include "SimModule/SimModulesInclude.h"
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
 
 struct FSingularisMorphVehicleAsyncInput;

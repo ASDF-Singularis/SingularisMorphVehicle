@@ -1,13 +1,13 @@
-#include "Components/SingularisSUComponent.h"
+#include "Components/SingularisMorphVehicleSUComponent.h"
 
 #include <Components/PrimitiveComponent.h>
 #include <Engine/World.h>
 
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleSUComponent)
 
-USingularisSUComponent::USingularisSUComponent()
+USingularisMorphVehicleSUComponent::USingularisMorphVehicleSUComponent()
 {
 	SetIsReplicatedByDefault(false);
 
@@ -17,7 +17,7 @@ USingularisSUComponent::USingularisSUComponent()
 	bAutoActivate = true;
 }
 
-void USingularisSUComponent::BeginPlay()
+void USingularisMorphVehicleSUComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -39,7 +39,7 @@ void USingularisSUComponent::BeginPlay()
 	}
 }
 
-void USingularisSUComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	AActor* Owner = GetOwner();
 	if (IsValid(Owner))
@@ -62,7 +62,7 @@ void USingularisSUComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void USingularisSUComponent::SetTreeIndex(const int32 NewValue)
+void USingularisMorphVehicleSUComponent::SetTreeIndex(const int32 NewValue)
 {
 	TreeIndex = NewValue;
 }

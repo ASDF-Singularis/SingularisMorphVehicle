@@ -5,7 +5,6 @@
 #include "Chaos/PBDSuspensionConstraints.h"
 #include "Physics/PhysicsInterfaceCore.h"
 #include "PhysicsEngine/PhysicsObjectExternalInterface.h"
-#include "PhysicsProxy/ClusterUnionPhysicsProxy.h"
 #include "PhysicsProxy/SuspensionConstraintProxy.h"
 #include "SimModule/SimModuleTree.h"
 #include "SimModule/TorqueSimModule.h"
