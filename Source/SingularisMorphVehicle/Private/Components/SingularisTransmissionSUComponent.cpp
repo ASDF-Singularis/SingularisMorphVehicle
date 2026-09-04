@@ -1,11 +1,11 @@
-#include "Components/SingularisMorphVehicleTransmissionSUComponent.h"
+#include "Components/SingularisTransmissionSUComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleTransmissionSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisTransmissionSUComponent)
 
-USingularisMorphVehicleTransmissionSUComponent::USingularisMorphVehicleTransmissionSUComponent()
+USingularisTransmissionSUComponent::USingularisTransmissionSUComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -15,7 +15,7 @@ USingularisMorphVehicleTransmissionSUComponent::USingularisMorphVehicleTransmiss
 	bAutoActivate = true;
 }
 
-void USingularisMorphVehicleTransmissionSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
+void USingularisTransmissionSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
 {
 	// 1) 有效性检查
 	if (!OutputData) return;
@@ -27,7 +27,7 @@ void USingularisMorphVehicleTransmissionSUComponent::OnOutputReady(const Chaos::
 		OnGearChangeNativeEvent.Broadcast(TransOutData->ModuleGuid, Event.ChangedToGear);
 }
 
-Chaos::ISimulationModuleBase* USingularisMorphVehicleTransmissionSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisTransmissionSUComponent::CreateNewCoreModule() const
 {
 	// 1) 配置变速箱设置
 	Chaos::FTransmissionSettings Settings;

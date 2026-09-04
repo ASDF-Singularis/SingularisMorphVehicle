@@ -1,11 +1,11 @@
-#include "Components/SingularisMorphVehicleClutchSUComponent.h"
+#include "Components/SingularisClutchSUComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleClutchSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisClutchSUComponent)
 
-USingularisMorphVehicleClutchSUComponent::USingularisMorphVehicleClutchSUComponent()
+USingularisClutchSUComponent::USingularisClutchSUComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -15,7 +15,7 @@ USingularisMorphVehicleClutchSUComponent::USingularisMorphVehicleClutchSUCompone
 	bAutoActivate = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisMorphVehicleClutchSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisClutchSUComponent::CreateNewCoreModule() const
 {
 	Chaos::FClutchSettings Settings;
 	Settings.ClutchStrength = ClutchStrength;

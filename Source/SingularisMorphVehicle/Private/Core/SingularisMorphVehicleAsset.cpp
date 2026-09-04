@@ -1,6 +1,6 @@
 #include "Core/SingularisMorphVehicleAsset.h"
 
-#include "Core/SingularisMorphSimCollection.h"
+#include "Core/SingularisMorphVehicleSimCollection.h"
 #include "UObject/Package.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleAsset)
@@ -20,7 +20,7 @@ USingularisMorphVehicleAsset* FSingularisMorphVehicleAssetEdit::GetAsset()
 }
 
 USingularisMorphVehicleAsset::USingularisMorphVehicleAsset(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer), ModularSimCollection(new FSingularisMorphSimCollection()) {}
+	: Super(ObjectInitializer), ModularSimCollection(new FSingularisMorphVehicleSimCollection()) {}
 
 
 /** Serialize */

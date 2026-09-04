@@ -2,18 +2,18 @@
 
 #include <Components/PrimitiveComponent.h>
 
-#include "Components/SingularisMorphVehicleSUComponent.h"
+#include "Components/SingularisSUComponent.h"
 
 void USingularisMorphVehicleMappingSubsystem::RegisterComponentMapping(
 	UPrimitiveComponent* PrimComp,
-	USingularisMorphVehicleSUComponent* SUComp
+	USingularisSUComponent* SUComp
 )
 {
 	if (!IsValid(PrimComp) || !IsValid(SUComp)) return;
 
 	// 追加到该物理组件对应的 SU 列表，重复注册同一 SU 时去重
-	TArray<TWeakObjectPtr<USingularisMorphVehicleSUComponent>>& SUList = ComponentMap.FindOrAdd(PrimComp);
-	for (const TWeakObjectPtr<USingularisMorphVehicleSUComponent>& Weak : SUList)
+	TArray<TWeakObjectPtr<USingularisSUComponent>>& SUList = ComponentMap.FindOrAdd(PrimComp);
+	for (const TWeakObjectPtr<USingularisSUComponent>& Weak : SUList)
 	{
 		if (Weak.Get() == SUComp)
 			return;
@@ -23,15 +23,15 @@ void USingularisMorphVehicleMappingSubsystem::RegisterComponentMapping(
 
 void USingularisMorphVehicleMappingSubsystem::UnregisterComponentMapping(
 	UPrimitiveComponent* PrimComp,
-	USingularisMorphVehicleSUComponent* SUComp
+	USingularisSUComponent* SUComp
 )
 {
 	if (!IsValid(PrimComp) || !IsValid(SUComp)) return;
 
-	if (TArray<TWeakObjectPtr<USingularisMorphVehicleSUComponent>>* SUList = ComponentMap.Find(PrimComp))
+	if (TArray<TWeakObjectPtr<USingularisSUComponent>>* SUList = ComponentMap.Find(PrimComp))
 	{
 		SUList->RemoveAllSwap(
-			[SUComp](const TWeakObjectPtr<USingularisMorphVehicleSUComponent>& Weak)
+			[SUComp](const TWeakObjectPtr<USingularisSUComponent>& Weak)
 			{
 				return Weak.Get() == SUComp;
 			}
@@ -43,21 +43,21 @@ void USingularisMorphVehicleMappingSubsystem::UnregisterComponentMapping(
 	}
 }
 
-TArray<USingularisMorphVehicleSUComponent*> USingularisMorphVehicleMappingSubsystem::FindSUComponents(
+TArray<USingularisSUComponent*> USingularisMorphVehicleMappingSubsystem::FindSUComponents(
 	UPrimitiveComponent* PrimComp
 ) const
 {
-	TArray<USingularisMorphVehicleSUComponent*> Result;
+	TArray<USingularisSUComponent*> Result;
 
 	// 1) 空指针守卫
 	if (!IsValid(PrimComp)) return Result;
 
 	// 2) 哈希查找 → 过滤已过期的弱引用 → 解引用
-	if (const TArray<TWeakObjectPtr<USingularisMorphVehicleSUComponent>>* SUList = ComponentMap.Find(PrimComp))
+	if (const TArray<TWeakObjectPtr<USingularisSUComponent>>* SUList = ComponentMap.Find(PrimComp))
 	{
-		for (const TWeakObjectPtr<USingularisMorphVehicleSUComponent>& Weak : *SUList)
+		for (const TWeakObjectPtr<USingularisSUComponent>& Weak : *SUList)
 		{
-			if (USingularisMorphVehicleSUComponent* SUComp = Weak.Get())
+			if (USingularisSUComponent* SUComp = Weak.Get())
 			{
 				if (IsValid(SUComp))
 					Result.Add(SUComp);
@@ -68,11 +68,11 @@ TArray<USingularisMorphVehicleSUComponent*> USingularisMorphVehicleMappingSubsys
 	return Result;
 }
 
-USingularisMorphVehicleSUComponent* USingularisMorphVehicleMappingSubsystem::FindSUComponent(
+USingularisSUComponent* USingularisMorphVehicleMappingSubsystem::FindSUComponent(
 	UPrimitiveComponent* PrimComp
 ) const
 {
 	// 兼容单映射场景：返回第一个有效 SU
-	const TArray<USingularisMorphVehicleSUComponent*> SUs = FindSUComponents(PrimComp);
+	const TArray<USingularisSUComponent*> SUs = FindSUComponents(PrimComp);
 	return SUs.Num() > 0 ? SUs[0] : nullptr;
 }

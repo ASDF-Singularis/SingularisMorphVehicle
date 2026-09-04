@@ -1,8 +1,8 @@
 #include "Core/SingularisMorphVehicleBuilder.h"
 
 #include "SingularisMorphVehicle.h"
-#include "Components/SingularisMorphVehicleSUComponent.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
+#include "Components/SingularisSUComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "SimModule/SimModulesInclude.h"
 

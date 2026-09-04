@@ -8,12 +8,12 @@
 #include <SimModule/SimulationModuleBase.h>
 
 #include "SingularisMorphVehicle.h"
-#include "Components/SingularisMorphVehicleClutchSUComponent.h"
-#include "Components/SingularisMorphVehicleEngineSUComponent.h"
-#include "Components/SingularisMorphVehicleSUComponent.h"
-#include "Components/SingularisMorphVehicleTransmissionSUComponent.h"
+#include "Components/SingularisClutchSUComponent.h"
+#include "Components/SingularisEngineSUComponent.h"
+#include "Components/SingularisSUComponent.h"
+#include "Components/SingularisTransmissionSUComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
-#include "Interfaces/SingularisMorphVehicleBaseInterface.h"
+#include "Interfaces/SingularisMorphVehicleSUInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 #include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
@@ -196,7 +196,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisSUComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
@@ -286,9 +286,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//    悬挂的 DrivenComponent 由资产配置决定：无悬挂实体时指向车轮网格
 	//    （复用车轮的粒子/位置），有悬挂实体时指向悬挂自身。
 	TMap<ESingularisMorphVehicleModuleType, int32> TypeToTreeIndex;
-	TSet<USingularisMorphVehicleSUComponent*> ProcessedComponents;
+	TSet<USingularisSUComponent*> ProcessedComponents;
 
-	auto AddEntity = [&](USingularisMorphVehicleSUComponent* SUComp, const int32 ParentIndex) -> int32
+	auto AddEntity = [&](USingularisSUComponent* SUComp, const int32 ParentIndex) -> int32
 	{
 		if (!SUComp || ProcessedComponents.Contains(SUComp)) return INDEX_NONE;
 
@@ -346,7 +346,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisSUComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
@@ -362,7 +362,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisSUComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (!SUComp || SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Engine) continue;
@@ -370,16 +370,16 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			const int32 EngineIndex = AddEntity(SUComp, ChassisIndex);
 			if (EngineIndex == INDEX_NONE) continue;
 
-			auto* EngineSU = Cast<USingularisMorphVehicleEngineSUComponent>(SUComp);
+			auto* EngineSU = Cast<USingularisEngineSUComponent>(SUComp);
 			if (!EngineSU) continue;
 
-			if (auto* ClutchSU = Cast<USingularisMorphVehicleClutchSUComponent>(
+			if (auto* ClutchSU = Cast<USingularisClutchSUComponent>(
 				EngineSU->LinkedClutch.GetComponent(Owner)
 			))
 			{
 				const int32 ClutchIndex = AddEntity(ClutchSU, EngineIndex);
 
-				if (auto* TransSU = Cast<USingularisMorphVehicleTransmissionSUComponent>(
+				if (auto* TransSU = Cast<USingularisTransmissionSUComponent>(
 					ClutchSU->LinkedTransmission.GetComponent(Owner)
 				))
 					AddEntity(TransSU, ClutchIndex);
@@ -393,7 +393,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisSUComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Suspension)
@@ -409,7 +409,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisSUComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (!SUComp || SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Wheel) continue;
@@ -426,7 +426,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisSUComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (!SUComp) continue;
@@ -619,7 +619,7 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 			Guid
 		))
 		{
-			if (auto* BaseSU = Cast<ISingularisMorphVehicleBaseInterface>(
+			if (auto* BaseSU = Cast<ISingularisMorphVehicleSUInterface>(
 				Component->Get()
 			))
 			{

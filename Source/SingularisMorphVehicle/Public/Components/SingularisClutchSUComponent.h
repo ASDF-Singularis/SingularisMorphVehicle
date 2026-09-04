@@ -2,11 +2,11 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisMorphVehicleClutchSUComponent.generated.h"
+#include "SingularisSUComponent.h"
+#include "SingularisClutchSUComponent.generated.h"
 
 /**
- * 引力奇点变型载具离合器仿真单元组件
+ * 引力奇点离合器仿真单元组件
  *
  * 限制引擎与变速箱之间的扭矩传递量，允许连接的轴以不同转速旋转。
  * 离合器强度决定最大可传递扭矩。
@@ -15,10 +15,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("Singularis"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点变型载具离合器仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点离合器仿真单元组件")
 )
-class SINGULARISMORPHVEHICLE_API
-	USingularisMorphVehicleClutchSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisClutchSUComponent : public USingularisSUComponent
 {
 	GENERATED_BODY()
 
@@ -27,9 +26,9 @@ public:
 
 	/** 离合器接合强度 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型载具离合器仿真单元|参数",
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点离合器仿真单元|参数",
 		meta = (DisplayName = "离合器强度")
 	)
 	float ClutchStrength = 1.0f;
@@ -38,7 +37,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变型载具离合器仿真单元|链接",
+		Category = "SingularisMorphVehicle|引力奇点离合器仿真单元|链接",
 		meta = (
 			DisplayName = "链接变速箱",
 			UseComponentPicker,
@@ -51,11 +50,11 @@ public:
 
 #pragma region Constructors
 
-	USingularisMorphVehicleClutchSUComponent();
+	USingularisClutchSUComponent();
 
 #pragma endregion
 
-#pragma region ISingularisMorphVehicleBaseInterface
+#pragma region SingularisMorphVehicleSU InterfaceS
 
 	virtual ESingularisMorphVehicleModuleType GetModuleType() const override
 	{

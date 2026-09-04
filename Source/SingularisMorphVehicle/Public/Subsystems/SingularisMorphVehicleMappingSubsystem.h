@@ -5,7 +5,7 @@
 
 #include "SingularisMorphVehicleMappingSubsystem.generated.h"
 
-class USingularisMorphVehicleSUComponent;
+class USingularisSUComponent;
 class UPrimitiveComponent;
 
 /**
@@ -27,7 +27,7 @@ class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleMappingSubsystem : publi
 	 * 一个物理组件可对应多个 SU（骨骼网格体的多个物理体/骨骼可分别挂载不同模拟单元）。
 	 * 双重弱引用：键和值均不阻止 GC，避免生命周期死锁。
 	 */
-	TMap<TWeakObjectPtr<UPrimitiveComponent>, TArray<TWeakObjectPtr<USingularisMorphVehicleSUComponent>>>
+	TMap<TWeakObjectPtr<UPrimitiveComponent>, TArray<TWeakObjectPtr<USingularisSUComponent>>>
 	ComponentMap{};
 
 #pragma endregion
@@ -46,7 +46,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点变型载具子系统|API",
 		meta = (DisplayName = "注册物理组件映射")
 	)
-	void RegisterComponentMapping(UPrimitiveComponent* PrimComp, USingularisMorphVehicleSUComponent* SUComp);
+	void RegisterComponentMapping(UPrimitiveComponent* PrimComp, USingularisSUComponent* SUComp);
 
 	/**
 	 * 注销指定物理组件与指定 SU 的映射。
@@ -61,7 +61,7 @@ public:
 	)
 	void UnregisterComponentMapping(
 		UPrimitiveComponent* PrimComp,
-		USingularisMorphVehicleSUComponent* SUComp
+		USingularisSUComponent* SUComp
 	);
 
 	/**
@@ -74,7 +74,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点变型载具子系统|API",
 		meta = (DisplayName = "查找 SU 组件列表")
 	)
-	TArray<USingularisMorphVehicleSUComponent*> FindSUComponents(UPrimitiveComponent* PrimComp) const;
+	TArray<USingularisSUComponent*> FindSUComponents(UPrimitiveComponent* PrimComp) const;
 
 	/**
 	 * 通过物理组件查找第一个有效的 SU 组件。
@@ -87,7 +87,7 @@ public:
 		Category = "SingularisMorphVehicle|引力奇点变型载具子系统|API",
 		meta = (DisplayName = "查找 SU 组件")
 	)
-	USingularisMorphVehicleSUComponent* FindSUComponent(UPrimitiveComponent* PrimComp) const;
+	USingularisSUComponent* FindSUComponent(UPrimitiveComponent* PrimComp) const;
 
 #pragma endregion
 };

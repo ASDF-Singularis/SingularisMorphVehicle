@@ -2,7 +2,7 @@
 
 #include <CoreMinimal.h>
 
-#include "Core/SingularisMorphSimCollection.h"
+#include "Core/SingularisMorphVehicleSimCollection.h"
 #include "SingularisMorphVehicleAsset.generated.h"
 
 /**
@@ -24,7 +24,7 @@ private:
 /**
  * 引力奇点变型载具资产。
  *
- * FSingularisMorphSimCollection 的 UObject 包装器，
+ * FSingularisMorphVehicleSimCollection 的 UObject 包装器，
  * 提供序列化与缩略图信息支持，用于将模块化模拟数据保存为独立资产。
  */
 UCLASS(customconstructor)
@@ -47,5 +47,5 @@ class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleAsset : public UObject
 #endif
 
 private:
-	TSharedPtr<FSingularisMorphSimCollection, ESPMode::ThreadSafe> ModularSimCollection;
+	TSharedPtr<FSingularisMorphVehicleSimCollection, ESPMode::ThreadSafe> ModularSimCollection;
 };

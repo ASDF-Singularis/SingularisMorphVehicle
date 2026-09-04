@@ -1,11 +1,11 @@
-#include "Components/SingularisMorphVehicleWheelSUComponent.h"
+#include "Components/SingularisWheelSUComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleWheelSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisWheelSUComponent)
 
-USingularisMorphVehicleWheelSUComponent::USingularisMorphVehicleWheelSUComponent()
+USingularisWheelSUComponent::USingularisWheelSUComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -16,7 +16,7 @@ USingularisMorphVehicleWheelSUComponent::USingularisMorphVehicleWheelSUComponent
 	bAnimationEnabled = true;
 }
 
-void USingularisMorphVehicleWheelSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
+void USingularisWheelSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
 {
 	if (!OutputData) return;
 
@@ -26,7 +26,7 @@ void USingularisMorphVehicleWheelSUComponent::OnOutputReady(const Chaos::FSimOut
 		OnWheelTouchChangeNativeEvent.Broadcast(WheelOutData->ModuleGuid, Event.bIsInContact);
 }
 
-Chaos::ISimulationModuleBase* USingularisMorphVehicleWheelSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisWheelSUComponent::CreateNewCoreModule() const
 {
 	Chaos::FWheelSettings Settings;
 

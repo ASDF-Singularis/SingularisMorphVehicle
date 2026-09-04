@@ -1,13 +1,13 @@
-#include "Components/SingularisMorphVehicleSuspensionSUComponent.h"
+#include "Components/SingularisSuspensionSUComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include "Core/SingularisMorphSuspensionSimModule.h"
+#include "Core/SingularisMorphVehicleSuspensionSimModule.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleSuspensionSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisSuspensionSUComponent)
 
-USingularisMorphVehicleSuspensionSUComponent::USingularisMorphVehicleSuspensionSUComponent()
+USingularisSuspensionSUComponent::USingularisSuspensionSUComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -18,7 +18,7 @@ USingularisMorphVehicleSuspensionSUComponent::USingularisMorphVehicleSuspensionS
 	bAnimationEnabled = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisMorphVehicleSuspensionSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisSuspensionSUComponent::CreateNewCoreModule() const
 {
 	// 1) 配置悬挂设置
 	FSingularisMorphSuspensionSettings Settings;
@@ -32,7 +32,7 @@ Chaos::ISimulationModuleBase* USingularisMorphVehicleSuspensionSUComponent::Crea
 	Settings.SuspensionForceEffect = SuspensionForceEffect;
 
 	// 2) 创建悬挂仿真模块并启用动画
-	Chaos::ISimulationModuleBase* Suspension = new FSingularisMorphSuspensionSimModule(Settings);
+	Chaos::ISimulationModuleBase* Suspension = new FSingularisMorphVehicleSuspensionSimModule(Settings);
 	Suspension->SetAnimationEnabled(bAnimationEnabled);
 
 	return Suspension;

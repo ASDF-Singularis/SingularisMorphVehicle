@@ -5,7 +5,7 @@
 #include <UObject/Interface.h>
 
 #include "Types/SingularisMorphVehicleType.h"
-#include "SingularisMorphVehicleBaseInterface.generated.h"
+#include "SingularisMorphVehicleSUInterface.generated.h"
 
 namespace Chaos
 {
@@ -14,7 +14,7 @@ namespace Chaos
 }
 
 UINTERFACE(Blueprintable, BlueprintType)
-class USingularisMorphVehicleBaseInterface : public UInterface
+class USingularisMorphVehicleSUInterface : public UInterface
 {
 	GENERATED_BODY()
 };
@@ -22,7 +22,7 @@ class USingularisMorphVehicleBaseInterface : public UInterface
 /**
  * 引力奇点变形载具基础接口
  */
-class SINGULARISMORPHVEHICLE_API ISingularisMorphVehicleBaseInterface
+class SINGULARISMORPHVEHICLE_API ISingularisMorphVehicleSUInterface
 {
 	GENERATED_BODY()
 

@@ -2,7 +2,7 @@
 
 #include <PhysicsPublic.h>
 
-#include "Core/SingularisMorphSimModuleManager.h"
+#include "Core/SingularisMorphVehicleSimModuleManager.h"
 
 DEFINE_LOG_CATEGORY(LogSingularisMorphVehicle);
 
@@ -34,13 +34,14 @@ void FSingularisMorphVehicleModule::ShutdownModule()
 
 void FSingularisMorphVehicleModule::PhysSceneInit(FPhysScene* PhysScene)
 {
-	new FSingularisMorphSimModuleManager(PhysScene);
+	new FSingularisMorphVehicleSimModuleManager(PhysScene);
 }
 
 void FSingularisMorphVehicleModule::PhysSceneTerm(FPhysScene* PhysScene)
 {
 	// 1) 获取物理场景关联的仿真模块管理器
-	FSingularisMorphSimModuleManager* VehicleManager = FSingularisMorphSimModuleManager::GetManagerFromScene(PhysScene);
+	FSingularisMorphVehicleSimModuleManager* VehicleManager =
+		FSingularisMorphVehicleSimModuleManager::GetManagerFromScene(PhysScene);
 	if (VehicleManager != nullptr)
 	{
 		// 2) 解除绑定并销毁管理器

@@ -4,18 +4,18 @@
 #include <Components/ActorComponent.h>
 #include <SimModule/ModuleInput.h>
 
-#include "Interfaces/SingularisMorphVehicleBaseInterface.h"
-#include "SingularisMorphVehicleSUComponent.generated.h"
+#include "Interfaces/SingularisMorphVehicleSUInterface.h"
+#include "SingularisSUComponent.generated.h"
 
 /**
- * 引力奇点变型基础模拟单元组件
+ * 引力奇点基础仿真单元组件
  *
  * 继承自 UActorComponent，作为纯数据配置容器为载具模拟模块提供实现基类。
  * 通过显式引用字段关联视觉组件与上下游模块，不再依赖 SceneComponent 附着层级。
  */
 UCLASS(Abstract, Blueprintable)
-class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSUComponent : public UActorComponent,
-                                                                      public ISingularisMorphVehicleBaseInterface
+class SINGULARISMORPHVEHICLE_API USingularisSUComponent : public UActorComponent,
+                                                          public ISingularisMorphVehicleSUInterface
 {
 	GENERATED_BODY()
 
@@ -26,7 +26,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|动画",
+		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
 		meta = (DisplayName = "启用动画")
 	)
 	bool bAnimationEnabled = false;
@@ -35,46 +35,46 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|动画",
+		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
 		meta = (DisplayName = "骨骼名称", EditCondition = "bAnimationEnabled")
 	)
 	FName BoneName = NAME_None;
-
-	/** 动画偏移量 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|动画",
-		meta = (DisplayName = "动画偏移", EditCondition = "bAnimationEnabled")
-	)
-	FVector AnimationOffset = FVector::ZeroVector;
 
 	/** 模块输入配置 */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|输入",
+		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
 		meta = (DisplayName = "输入配置")
 	)
 	TArray<FModuleInputSetup> InputConfig{};
 
-	/** 驱动组件引用 */
+	/** 动画偏移量 */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|代理",
-		meta = (DisplayName = "驱动组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
+		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		meta = (DisplayName = "动画偏移", EditCondition = "bAnimationEnabled")
 	)
-	FComponentReference DrivenComponent{};
+	FVector AnimationOffset = FVector::ZeroVector;
 
 	/** 叠加在代理组件变换之上的额外偏移量（有代理组件时为增量偏移，无代理组件时作为绝对变换） */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型基础模拟单元|偏移",
+		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
 		meta = (DisplayName = "变换偏移")
 	)
 	FTransform TransformOffset = FTransform::Identity;
+
+	/** 驱动组件引用 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		meta = (DisplayName = "驱动组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
+	)
+	FComponentReference DrivenComponent{};
 
 #pragma endregion
 
@@ -97,7 +97,7 @@ private:
 public:
 #pragma region Constructors
 
-	USingularisMorphVehicleSUComponent();
+	USingularisSUComponent();
 
 #pragma endregion
 
@@ -108,7 +108,7 @@ public:
 
 #pragma endregion
 
-#pragma region ISingularisMorphVehicleBaseInterface
+#pragma region SingularisMorphVehicleSU Interface
 
 	virtual FName GetBoneName() const override { return BoneName; }
 

@@ -1,14 +1,15 @@
-#include "Core/SingularisMorphSimModuleManager.h"
+#include "Core/SingularisMorphVehicleSimModuleManager.h"
 
 #include "PBDRigidsSolver.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "GameFramework/HUD.h" // for ShowDebugInfo
 #include "Physics/Experimental/PhysScene_Chaos.h"
 #include "Types/SingularisMorphModuleInputTokenStore.h"
-TMap<FPhysScene*, FSingularisMorphSimModuleManager*> FSingularisMorphSimModuleManager::SceneToModuleManagerMap;
+TMap<FPhysScene*, FSingularisMorphVehicleSimModuleManager*>
+FSingularisMorphVehicleSimModuleManager::SceneToModuleManagerMap;
 
-FDelegateHandle FSingularisMorphSimModuleManager::OnPostWorldInitializationHandle;
-FDelegateHandle FSingularisMorphSimModuleManager::OnWorldCleanupHandle;
+FDelegateHandle FSingularisMorphVehicleSimModuleManager::OnPostWorldInitializationHandle;
+FDelegateHandle FSingularisMorphVehicleSimModuleManager::OnWorldCleanupHandle;
 
 extern FSingularisMorphSimModuleDebugParams GSingularisMorphSimModuleDebugParams;
 
@@ -97,7 +98,7 @@ void FSingularisMorphSimModuleOutputRecord::Clear()
 	bPreviousOutputIs0 = true;
 }
 
-FSingularisMorphSimModuleManager::FSingularisMorphSimModuleManager(FPhysScene* PhysScene)
+FSingularisMorphVehicleSimModuleManager::FSingularisMorphVehicleSimModuleManager(FPhysScene* PhysScene)
 	: Scene(*PhysScene), AsyncCallback(nullptr), Timestamp(0)
 
 {
@@ -110,44 +111,51 @@ FSingularisMorphSimModuleManager::FSingularisMorphSimModuleManager(FPhysScene* P
 		// therefore setup these global world delegates that will callback when everything is setup so registering
 		// the physics solver Async Callback will succeed
 		OnPostWorldInitializationHandle = FWorldDelegates::OnPostWorldInitialization.AddStatic(
-			&FSingularisMorphSimModuleManager::OnPostWorldInitialization
+			&FSingularisMorphVehicleSimModuleManager::OnPostWorldInitialization
 		);
 		OnWorldCleanupHandle = FWorldDelegates::OnWorldCleanup.AddStatic(
-			&FSingularisMorphSimModuleManager::OnWorldCleanup
+			&FSingularisMorphVehicleSimModuleManager::OnWorldCleanup
 		);
 
 		if (!IsRunningDedicatedServer())
-			AHUD::OnShowDebugInfo.AddStatic(&FSingularisMorphSimModuleManager::OnShowDebugInfo);
+			AHUD::OnShowDebugInfo.AddStatic(&FSingularisMorphVehicleSimModuleManager::OnShowDebugInfo);
 	}
 
-	ensure(FSingularisMorphSimModuleManager::SceneToModuleManagerMap.Find(PhysScene) == nullptr);
+	ensure(FSingularisMorphVehicleSimModuleManager::SceneToModuleManagerMap.Find(PhysScene) == nullptr);
 	// double registration with same scene, will cause a leak
 
 	// Add to Scene-To-Manager map
 	SceneToModuleManagerMap.Add(PhysScene, this);
 }
 
-FSingularisMorphSimModuleManager::~FSingularisMorphSimModuleManager()
+FSingularisMorphVehicleSimModuleManager::~FSingularisMorphVehicleSimModuleManager()
 {
 	while (CUVehicles.Num() > 0)
 		RemoveVehicle(CUVehicles.Last());
 }
 
-void FSingularisMorphSimModuleManager::OnPostWorldInitialization(UWorld* InWorld, const UWorld::InitializationValues)
+void FSingularisMorphVehicleSimModuleManager::OnPostWorldInitialization(
+	UWorld* InWorld,
+	const UWorld::InitializationValues
+)
 {
-	FSingularisMorphSimModuleManager* Manager = GetManagerFromScene(InWorld->GetPhysicsScene());
+	FSingularisMorphVehicleSimModuleManager* Manager = GetManagerFromScene(InWorld->GetPhysicsScene());
 	if (Manager)
 		Manager->RegisterCallbacks(InWorld);
 }
 
-void FSingularisMorphSimModuleManager::OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources)
+void FSingularisMorphVehicleSimModuleManager::OnWorldCleanup(
+	UWorld* InWorld,
+	bool bSessionEnded,
+	bool bCleanupResources
+)
 {
-	FSingularisMorphSimModuleManager* Manager = GetManagerFromScene(InWorld->GetPhysicsScene());
+	FSingularisMorphVehicleSimModuleManager* Manager = GetManagerFromScene(InWorld->GetPhysicsScene());
 	if (Manager)
 		Manager->UnregisterCallbacks();
 }
 
-void FSingularisMorphSimModuleManager::OnShowDebugInfo(
+void FSingularisMorphVehicleSimModuleManager::OnShowDebugInfo(
 	AHUD* HUD,
 	UCanvas* Canvas,
 	const FDebugDisplayInfo& DisplayInfo,
@@ -158,7 +166,7 @@ void FSingularisMorphSimModuleManager::OnShowDebugInfo(
 	static const FName NAME_SingularisMorphVehicle("SingularisMorphVehicle");
 	if (Canvas && HUD->ShouldDisplayDebug(NAME_SingularisMorphVehicle))
 	{
-		if (FSingularisMorphSimModuleManager* Manager = GetManagerFromScene(HUD->GetWorld()->GetPhysicsScene()))
+		if (FSingularisMorphVehicleSimModuleManager* Manager = GetManagerFromScene(HUD->GetWorld()->GetPhysicsScene()))
 		{
 			auto ShowVehicleIndex = 0;
 			if (!Manager->CUVehicles.IsEmpty())
@@ -173,7 +181,9 @@ void FSingularisMorphSimModuleManager::OnShowDebugInfo(
 	}
 }
 
-void FSingularisMorphSimModuleManager::AddVehicle(TWeakObjectPtr<USingularisMorphVehicleSimulationComponent> Vehicle)
+void FSingularisMorphVehicleSimModuleManager::AddVehicle(
+	TWeakObjectPtr<USingularisMorphVehicleSimulationComponent> Vehicle
+)
 {
 	// 1) 前置条件校验
 	check(Vehicle != NULL);
@@ -183,14 +193,16 @@ void FSingularisMorphSimModuleManager::AddVehicle(TWeakObjectPtr<USingularisMorp
 	CUVehicles.Add(Vehicle);
 }
 
-void FSingularisMorphSimModuleManager::RemoveVehicle(TWeakObjectPtr<USingularisMorphVehicleSimulationComponent> Vehicle)
+void FSingularisMorphVehicleSimModuleManager::RemoveVehicle(
+	TWeakObjectPtr<USingularisMorphVehicleSimulationComponent> Vehicle
+)
 {
 	// 1) 有效性检查并从载具列表中移除以停止后续处理
 	if (Vehicle != nullptr)
 		CUVehicles.Remove(Vehicle);
 }
 
-void FSingularisMorphSimModuleManager::ScenePreTick(FPhysScene* PhysScene, float DeltaTime)
+void FSingularisMorphVehicleSimModuleManager::ScenePreTick(FPhysScene* PhysScene, float DeltaTime)
 {
 	for (TWeakObjectPtr<USingularisMorphVehicleSimulationComponent>& Vehicle : CUVehicles)
 	{
@@ -201,7 +213,7 @@ void FSingularisMorphSimModuleManager::ScenePreTick(FPhysScene* PhysScene, float
 }
 
 
-void FSingularisMorphSimModuleManager::DetachFromPhysScene(FPhysScene* PhysScene)
+void FSingularisMorphVehicleSimModuleManager::DetachFromPhysScene(FPhysScene* PhysScene)
 {
 	if (AsyncCallback)
 		UnregisterCallbacks();
@@ -209,7 +221,7 @@ void FSingularisMorphSimModuleManager::DetachFromPhysScene(FPhysScene* PhysScene
 	SceneToModuleManagerMap.Remove(PhysScene);
 }
 
-void FSingularisMorphSimModuleManager::Update(FPhysScene* PhysScene, float DeltaTime)
+void FSingularisMorphVehicleSimModuleManager::Update(FPhysScene* PhysScene, float DeltaTime)
 {
 	UWorld* World = Scene.GetOwningWorld();
 
@@ -233,7 +245,7 @@ void FSingularisMorphSimModuleManager::Update(FPhysScene* PhysScene, float Delta
 	}
 }
 
-void FSingularisMorphSimModuleManager::PostUpdate(FChaosScene* PhysScene)
+void FSingularisMorphVehicleSimModuleManager::PostUpdate(FChaosScene* PhysScene)
 {
 	ParallelUpdateVehicles();
 
@@ -245,7 +257,7 @@ void FSingularisMorphSimModuleManager::PostUpdate(FChaosScene* PhysScene)
 	}
 }
 
-void FSingularisMorphSimModuleManager::OnNetDriverCreated(UWorld* InWorld, UNetDriver* InNetDriver)
+void FSingularisMorphVehicleSimModuleManager::OnNetDriverCreated(UWorld* InWorld, UNetDriver* InNetDriver)
 {
 	if (InNetDriver)
 	{
@@ -255,13 +267,13 @@ void FSingularisMorphSimModuleManager::OnNetDriverCreated(UWorld* InWorld, UNetD
 		{
 			InNetDriver->OnNetTokenStoreReady().AddRaw(
 				this,
-				&FSingularisMorphSimModuleManager::RegisterNetTokenDataStores
+				&FSingularisMorphVehicleSimModuleManager::RegisterNetTokenDataStores
 			);
 		}
 	}
 }
 
-void FSingularisMorphSimModuleManager::RegisterNetTokenDataStores(UNetDriver* InNetDriver)
+void FSingularisMorphVehicleSimModuleManager::RegisterNetTokenDataStores(UNetDriver* InNetDriver)
 {
 	if (InNetDriver)
 	{
@@ -279,7 +291,7 @@ void FSingularisMorphSimModuleManager::RegisterNetTokenDataStores(UNetDriver* In
 	}
 }
 
-void FSingularisMorphSimModuleManager::InjectInputs_External(int32 PhysicsStep, int32 NumSteps)
+void FSingularisMorphVehicleSimModuleManager::InjectInputs_External(int32 PhysicsStep, int32 NumSteps)
 {
 	UWorld* World = Scene.GetOwningWorld();
 	if (IsValid(World) == false)
@@ -305,7 +317,7 @@ void FSingularisMorphSimModuleManager::InjectInputs_External(int32 PhysicsStep, 
 	}
 }
 
-void FSingularisMorphSimModuleManager::ParallelUpdateVehicles()
+void FSingularisMorphVehicleSimModuleManager::ParallelUpdateVehicles()
 {
 	// Friendly reminder: Results time is the time at the END of an async step
 	const double ResultsTime = AsyncCallback->GetSolver()->GetPhysicsResultsTime_External();
@@ -373,26 +385,31 @@ void FSingularisMorphSimModuleManager::ParallelUpdateVehicles()
 	}
 }
 
-FSingularisMorphSimModuleManager* FSingularisMorphSimModuleManager::GetManagerFromScene(FPhysScene* PhysScene)
+FSingularisMorphVehicleSimModuleManager* FSingularisMorphVehicleSimModuleManager::GetManagerFromScene(
+	FPhysScene* PhysScene
+)
 {
-	FSingularisMorphSimModuleManager* Manager = nullptr;
-	FSingularisMorphSimModuleManager** ManagerPtr = SceneToModuleManagerMap.Find(PhysScene);
+	FSingularisMorphVehicleSimModuleManager* Manager = nullptr;
+	FSingularisMorphVehicleSimModuleManager** ManagerPtr = SceneToModuleManagerMap.Find(PhysScene);
 	if (ManagerPtr != nullptr)
 		Manager = *ManagerPtr;
 	return Manager;
 }
 
-void FSingularisMorphSimModuleManager::RegisterCallbacks(UWorld* InWorld)
+void FSingularisMorphVehicleSimModuleManager::RegisterCallbacks(UWorld* InWorld)
 {
 	// 1) 注册网络驱动创建回调
 	OnNetDriverCreatedHandle = FWorldDelegates::OnNetDriverCreated.AddRaw(
 		this,
-		&FSingularisMorphSimModuleManager::OnNetDriverCreated
+		&FSingularisMorphVehicleSimModuleManager::OnNetDriverCreated
 	);
 
 	// 2) 注册物理场景前后Tick回调
-	OnPhysScenePreTickHandle = Scene.OnPhysScenePreTick.AddRaw(this, &FSingularisMorphSimModuleManager::Update);
-	OnPhysScenePostTickHandle = Scene.OnPhysScenePostTick.AddRaw(this, &FSingularisMorphSimModuleManager::PostUpdate);
+	OnPhysScenePreTickHandle = Scene.OnPhysScenePreTick.AddRaw(this, &FSingularisMorphVehicleSimModuleManager::Update);
+	OnPhysScenePostTickHandle = Scene.OnPhysScenePostTick.AddRaw(
+		this,
+		&FSingularisMorphVehicleSimModuleManager::PostUpdate
+	);
 
 	// 3) 创建异步回调对象以管理异步Ticking与数据编组
 	check(AsyncCallback == nullptr);
@@ -401,10 +418,15 @@ void FSingularisMorphSimModuleManager::RegisterCallbacks(UWorld* InWorld)
 
 	// 4) 将输入注入函数注册至网络物理回放回调
 	if (auto SolverCallback = static_cast<FNetworkPhysicsCallback*>(Scene.GetSolver()->GetRewindCallback()))
-		SolverCallback->InjectInputsExternal.AddRaw(this, &FSingularisMorphSimModuleManager::InjectInputs_External);
+	{
+		SolverCallback->InjectInputsExternal.AddRaw(
+			this,
+			&FSingularisMorphVehicleSimModuleManager::InjectInputs_External
+		);
+	}
 }
 
-void FSingularisMorphSimModuleManager::UnregisterCallbacks()
+void FSingularisMorphVehicleSimModuleManager::UnregisterCallbacks()
 {
 	// 1) 移除所有物理场景Tick回调
 	Scene.OnPhysScenePreTick.Remove(OnPhysScenePreTickHandle);
@@ -419,4 +441,4 @@ void FSingularisMorphSimModuleManager::UnregisterCallbacks()
 	}
 }
 
-bool FSingularisMorphSimModuleManager::GInitialized = false;
+bool FSingularisMorphVehicleSimModuleManager::GInitialized = false;

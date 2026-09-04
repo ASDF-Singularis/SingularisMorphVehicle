@@ -30,9 +30,9 @@ class USingularisMorphVehiclePhysicsAdapter;
 class IPhysicsProxyBase;
 class AHUD;
 class UCanvas;
-class USingularisMorphVehicleSUComponent;
-class USingularisMorphVehicleSuspensionSUComponent;
-class USingularisMorphVehicleWheelSUComponent;
+class USingularisSUComponent;
+class USingularisSuspensionSUComponent;
+class USingularisWheelSUComponent;
 
 #pragma region 委托签名
 
@@ -99,8 +99,8 @@ public:
 
 	/** 仿真树处理顺序 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
 		meta = (DisplayName = "仿真树处理顺序")
 	)
@@ -108,8 +108,8 @@ public:
 
 	/** 输入量化类型 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
 		meta = (DisplayName = "输入量化类型")
 	)
@@ -124,17 +124,26 @@ public:
 	 */
 	UPROPERTY(
 		Instanced,
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
 		meta = (DisplayName = "物理适配器")
 	)
 	TObjectPtr<USingularisMorphVehiclePhysicsAdapter> PhysicsAdapter = nullptr;
 
+	/** 保持载具唤醒（禁止休眠） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
+		meta = (DisplayName = "禁止休眠")
+	)
+	bool bKeepVehicleAwake = true;
+
 	/** 线性阻尼（空气阻力） */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|阻尼",
 		meta = (DisplayName = "线性阻尼")
 	)
@@ -142,26 +151,17 @@ public:
 
 	/** 角阻尼（旋转阻力） */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|阻尼",
 		meta = (DisplayName = "角阻尼")
 	)
 	float AngularDamping = 0.0f;
 
-	/** 保持载具唤醒（禁止休眠） */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|参数",
-		meta = (DisplayName = "禁止休眠")
-	)
-	bool bKeepVehicleAwake = true;
-
 	/** 悬挂射线检测通道 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
 		meta = (DisplayName = "悬挂射线通道")
 	)
@@ -169,8 +169,8 @@ public:
 
 	/** 悬挂射线碰撞响应 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
 		meta = (DisplayName = "悬挂射线碰撞响应")
 	)
@@ -178,8 +178,8 @@ public:
 
 	/** 悬挂射线是否使用复杂碰撞 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
 		meta = (DisplayName = "悬挂射线复杂碰撞")
 	)
@@ -187,8 +187,8 @@ public:
 
 	/** 悬挂射线类型 */
 	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
+		EditDefaultsOnly,
+		BlueprintReadOnly,
 		Category = "SingularisMorphVehicle|引力奇点变型载具仿真|悬挂",
 		meta = (DisplayName = "悬挂射线类型")
 	)

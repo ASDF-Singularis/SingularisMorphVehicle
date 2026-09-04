@@ -5,7 +5,7 @@
 #include <Physics/Experimental/PhysScene_Chaos.h>
 #include <Subsystems/WorldSubsystem.h>
 
-#include "Core/SingularisMorphSimModuleManager.h"
+#include "Core/SingularisMorphVehicleSimModuleManager.h"
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
 #include "SingularisMorphVehicleSchedulerSubsystem.generated.h"
 

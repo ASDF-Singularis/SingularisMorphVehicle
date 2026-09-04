@@ -1,11 +1,11 @@
-#include "Components/SingularisMorphVehicleEngineSUComponent.h"
+#include "Components/SingularisEngineSUComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleEngineSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisEngineSUComponent)
 
-USingularisMorphVehicleEngineSUComponent::USingularisMorphVehicleEngineSUComponent()
+USingularisEngineSUComponent::USingularisEngineSUComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -20,12 +20,12 @@ USingularisMorphVehicleEngineSUComponent::USingularisMorphVehicleEngineSUCompone
 	TorqueCurve.GetRichCurve()->AddKey(1.0f, 0.75f);
 }
 
-void USingularisMorphVehicleEngineSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
+void USingularisEngineSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
 {
 	// 引擎模块当前无需处理输出数据，由子类按需重写
 }
 
-Chaos::ISimulationModuleBase* USingularisMorphVehicleEngineSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisEngineSUComponent::CreateNewCoreModule() const
 {
 	// 1) 配置引擎设置
 	Chaos::FEngineSettings Settings;

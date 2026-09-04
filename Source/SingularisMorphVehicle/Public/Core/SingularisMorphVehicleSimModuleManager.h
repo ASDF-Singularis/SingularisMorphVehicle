@@ -49,11 +49,11 @@ private:
  * 在每个物理帧驱动载具模拟管线（输入注入、并行更新、后处理），
  * 管理异步回调与网络复制令牌存储。
  */
-class SINGULARISMORPHVEHICLE_API FSingularisMorphSimModuleManager
+class SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSimModuleManager
 {
 public:
-	FSingularisMorphSimModuleManager(FPhysScene* PhysScene);
-	~FSingularisMorphSimModuleManager();
+	FSingularisMorphVehicleSimModuleManager(FPhysScene* PhysScene);
+	~FSingularisMorphVehicleSimModuleManager();
 
 	static void OnPostWorldInitialization(UWorld* InWorld, const UWorld::InitializationValues);
 	static void OnWorldCleanup(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources);
@@ -95,7 +95,7 @@ public:
 	void ParallelUpdateVehicles();
 
 	/** 从物理场景查找载具管理器 */
-	static FSingularisMorphSimModuleManager* GetManagerFromScene(FPhysScene* PhysScene);
+	static FSingularisMorphVehicleSimModuleManager* GetManagerFromScene(FPhysScene* PhysScene);
 
 protected:
 	void RegisterCallbacks(UWorld* InWorld);
@@ -103,7 +103,7 @@ protected:
 
 private:
 	/** 物理场景到对应载具管理器的静态映射 */
-	static TMap<FPhysScene*, FSingularisMorphSimModuleManager*> SceneToModuleManagerMap;
+	static TMap<FPhysScene*, FSingularisMorphVehicleSimModuleManager*> SceneToModuleManagerMap;
 
 	/** 关联的 Chaos 物理场景 */
 	FPhysScene_Chaos& Scene;

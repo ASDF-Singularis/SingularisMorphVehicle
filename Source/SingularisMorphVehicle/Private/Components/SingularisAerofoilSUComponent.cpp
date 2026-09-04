@@ -1,11 +1,11 @@
-#include "Components/SingularisMorphVehicleAerofoilSUComponent.h"
+#include "Components/SingularisAerofoilSUComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleAerofoilSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisAerofoilSUComponent)
 
-USingularisMorphVehicleAerofoilSUComponent::USingularisMorphVehicleAerofoilSUComponent()
+USingularisAerofoilSUComponent::USingularisAerofoilSUComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -16,7 +16,7 @@ USingularisMorphVehicleAerofoilSUComponent::USingularisMorphVehicleAerofoilSUCom
 	bAnimationEnabled = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisMorphVehicleAerofoilSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisAerofoilSUComponent::CreateNewCoreModule() const
 {
 	Chaos::FAerofoilSettings Settings;
 

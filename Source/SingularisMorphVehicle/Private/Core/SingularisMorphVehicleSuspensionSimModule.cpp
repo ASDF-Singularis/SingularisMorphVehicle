@@ -1,4 +1,4 @@
-#include "Core/SingularisMorphSuspensionSimModule.h"
+#include "Core/SingularisMorphVehicleSuspensionSimModule.h"
 
 #include "PBDRigidsSolver.h"
 #include "VehicleUtility.h"
@@ -19,7 +19,7 @@ using namespace Chaos;
 
 void FSingularisMorphSuspensionSimModuleData::FillSimState(ISimulationModuleBase* SimModule)
 {
-	if (FSingularisMorphSuspensionSimModule* Sim = SimModule->Cast<FSingularisMorphSuspensionSimModule>())
+	if (FSingularisMorphVehicleSuspensionSimModule* Sim = SimModule->Cast<FSingularisMorphVehicleSuspensionSimModule>())
 	{
 		Sim->SpringDisplacement = SpringDisplacement;
 		Sim->LastDisplacement = LastDisplacement;
@@ -28,7 +28,8 @@ void FSingularisMorphSuspensionSimModuleData::FillSimState(ISimulationModuleBase
 
 void FSingularisMorphSuspensionSimModuleData::FillNetState(const ISimulationModuleBase* SimModule)
 {
-	if (const FSingularisMorphSuspensionSimModule* Sim = SimModule->Cast<const FSingularisMorphSuspensionSimModule>())
+	if (const FSingularisMorphVehicleSuspensionSimModule* Sim = SimModule->Cast<const
+		FSingularisMorphVehicleSuspensionSimModule>())
 	{
 		SpringDisplacement = Sim->SpringDisplacement;
 		LastDisplacement = Sim->LastDisplacement;
@@ -48,7 +49,7 @@ void FSingularisMorphSuspensionSimModuleData::Lerp(
 	LastDisplacement = FMath::Lerp(MinData.LastDisplacement, MaxData.LastDisplacement, LerpFactor);
 }
 
-FSingularisMorphSuspensionSimModule::FSingularisMorphSuspensionSimModule(
+FSingularisMorphVehicleSuspensionSimModule::FSingularisMorphVehicleSuspensionSimModule(
 	const FSingularisMorphSuspensionSettings& Settings
 )
 	: TSimModuleSettings<FSingularisMorphSuspensionSettings>(Settings),
@@ -59,21 +60,21 @@ FSingularisMorphSuspensionSimModule::FSingularisMorphSuspensionSimModule(
 	AccessSetup().MaxLength = FMath::Abs(Settings.MaxRaise + Settings.MaxDrop);
 }
 
-FSingularisMorphSuspensionSimModule::~FSingularisMorphSuspensionSimModule() {}
+FSingularisMorphVehicleSuspensionSimModule::~FSingularisMorphVehicleSuspensionSimModule() {}
 
-float FSingularisMorphSuspensionSimModule::GetSpringLength() const
+float FSingularisMorphVehicleSuspensionSimModule::GetSpringLength() const
 {
 	return -(Setup().MaxLength - SpringDisplacement);
 }
 
-void FSingularisMorphSuspensionSimModule::SetSpringLength(float InLength, float WheelRadius)
+void FSingularisMorphVehicleSuspensionSimModule::SetSpringLength(float InLength, float WheelRadius)
 {
 	float DisplacementInput = InLength;
 	DisplacementInput = FMath::Max(0.f, DisplacementInput);
 	SpringDisplacement = Setup().MaxLength - DisplacementInput;
 }
 
-void FSingularisMorphSuspensionSimModule::GetWorldTraceEndpoints(
+void FSingularisMorphVehicleSuspensionSimModule::GetWorldTraceEndpoints(
 	float DeltaSeconds,
 	const FTransform& BodyTransform,
 	const FVector& Velocity,
@@ -98,20 +99,20 @@ void FSingularisMorphSuspensionSimModule::GetWorldTraceEndpoints(
 	OutTrace.End = WorldLocation + WorldDirection * (Setup().MaxDrop + WheelRadius) + MovementExpansion;
 }
 
-void FSingularisMorphSuspensionSimModule::OnConstruction_External(const FPhysicsObjectHandle& PhysicsObject)
+void FSingularisMorphVehicleSuspensionSimModule::OnConstruction_External(const FPhysicsObjectHandle& PhysicsObject)
 {
 	EnsureIsInGameThreadContext();
 	CreateConstraint(PhysicsObject);
 }
 
 
-void FSingularisMorphSuspensionSimModule::OnTermination_External()
+void FSingularisMorphVehicleSuspensionSimModule::OnTermination_External()
 {
 	EnsureIsInGameThreadContext();
 	DestroyConstraint();
 }
 
-void FSingularisMorphSuspensionSimModule::Simulate(
+void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 	float DeltaTime,
 	const FAllInputs& Inputs,
 	FSimModuleTree& VehicleModuleSystem
@@ -155,7 +156,7 @@ void FSingularisMorphSuspensionSimModule::Simulate(
 		UpdateConstraint();
 }
 
-void FSingularisMorphSuspensionSimModule::Animate()
+void FSingularisMorphVehicleSuspensionSimModule::Animate()
 {
 	FVector Movement = -Setup().SuspensionAxis * (Setup().MaxRaise + GetSpringLength());
 
@@ -163,7 +164,7 @@ void FSingularisMorphSuspensionSimModule::Animate()
 	AnimationData.AnimationLocOffset = Movement;
 }
 
-void FSingularisMorphSuspensionSimModule::UpdateConstraint()
+void FSingularisMorphVehicleSuspensionSimModule::UpdateConstraint()
 {
 	if (auto Constraint = static_cast<FSuspensionConstraint*>(ConstraintHandle.Constraint))
 	{
@@ -188,7 +189,7 @@ void FSingularisMorphSuspensionSimModule::UpdateConstraint()
 	}
 }
 
-void FSingularisMorphSuspensionSimModule::CreateConstraint(const FPhysicsObjectHandle& PhysicsObject)
+void FSingularisMorphVehicleSuspensionSimModule::CreateConstraint(const FPhysicsObjectHandle& PhysicsObject)
 {
 	EnsureIsInGameThreadContext();
 
@@ -218,7 +219,7 @@ void FSingularisMorphSuspensionSimModule::CreateConstraint(const FPhysicsObjectH
 	}
 }
 
-void FSingularisMorphSuspensionSimModule::DestroyConstraint()
+void FSingularisMorphVehicleSuspensionSimModule::DestroyConstraint()
 {
 	EnsureIsInGameThreadContext();
 	FPhysicsCommand::ExecuteWrite(
@@ -246,7 +247,8 @@ void FSingularisMorphSuspensionOutputData::FillOutputState(const ISimulationModu
 {
 	FSimOutputData::FillOutputState(SimModule);
 
-	if (const FSingularisMorphSuspensionSimModule* Sim = SimModule->Cast<const FSingularisMorphSuspensionSimModule>())
+	if (const FSingularisMorphVehicleSuspensionSimModule* Sim = SimModule->Cast<const
+		FSingularisMorphVehicleSuspensionSimModule>())
 	{
 		SpringDisplacement = Sim->SpringDisplacement;
 		SpringDisplacementVector = -Sim->Setup().SuspensionAxis * Sim->SpringDisplacement + Sim->GetAnimationOffset();

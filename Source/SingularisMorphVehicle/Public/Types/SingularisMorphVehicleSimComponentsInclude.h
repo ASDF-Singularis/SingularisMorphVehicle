@@ -6,10 +6,10 @@
  * 单点入口：包含所有模拟组件头文件，确保依赖关系一致。
  */
 
-#include "Components/SingularisMorphVehicleAerofoilSUComponent.h"
-#include "Components/SingularisMorphVehicleChassisSUComponent.h"
-#include "Components/SingularisMorphVehicleClutchSUComponent.h"
-#include "Components/SingularisMorphVehicleEngineSUComponent.h"
-#include "Components/SingularisMorphVehicleSuspensionSUComponent.h"
-#include "Components/SingularisMorphVehicleTransmissionSUComponent.h"
-#include "Components/SingularisMorphVehicleWheelSUComponent.h"
+#include "Components/SingularisAerofoilSUComponent.h"
+#include "Components/SingularisChassisSUComponent.h"
+#include "Components/SingularisClutchSUComponent.h"
+#include "Components/SingularisEngineSUComponent.h"
+#include "Components/SingularisSuspensionSUComponent.h"
+#include "Components/SingularisTransmissionSUComponent.h"
+#include "Components/SingularisWheelSUComponent.h"

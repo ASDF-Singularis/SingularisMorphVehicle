@@ -5,7 +5,7 @@
 #include "Chaos/ChaosEngineInterface.h"
 #include "SimModule/SuspensionBaseInterface.h"
 
-class FSingularisMorphSuspensionSimModule;
+class FSingularisMorphVehicleSuspensionSimModule;
 
 namespace Chaos
 {
@@ -19,7 +19,8 @@ namespace Chaos
  */
 struct FSingularisMorphSuspensionSimModuleData
 	: Chaos::FModuleNetData,
-	  Chaos::TSimulationModuleTypeable<FSingularisMorphSuspensionSimModule, FSingularisMorphSuspensionSimModuleData>
+	  Chaos::TSimulationModuleTypeable<FSingularisMorphVehicleSuspensionSimModule,
+	                                   FSingularisMorphSuspensionSimModuleData>
 {
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	FSingularisMorphSuspensionSimModuleData(int NodeArrayIndex, const FString& InDebugString) : FModuleNetData(
@@ -54,7 +55,7 @@ struct FSingularisMorphSuspensionSimModuleData
  */
 struct FSingularisMorphSuspensionOutputData
 	: Chaos::FSimOutputData,
-	  Chaos::TSimulationModuleTypeable<FSingularisMorphSuspensionSimModule, FSingularisMorphSuspensionOutputData>
+	  Chaos::TSimulationModuleTypeable<FSingularisMorphVehicleSuspensionSimModule, FSingularisMorphSuspensionOutputData>
 {
 	virtual FSimOutputData* MakeNewData() override { return MakeNew(); }
 	static FSimOutputData* MakeNew() { return new FSingularisMorphSuspensionOutputData(); }
@@ -133,17 +134,17 @@ public:
  * 在物理线程中运行，模拟悬挂弹簧-阻尼系统的力学行为，
  * 包括碰撞检测（射线/球体）、弹簧力计算与约束创建。
  */
-class FSingularisMorphSuspensionSimModule
+class FSingularisMorphVehicleSuspensionSimModule
 	: public Chaos::FSuspensionBaseInterface,
 	  public Chaos::TSimModuleSettings<FSingularisMorphSuspensionSettings>,
-	  public Chaos::TSimulationModuleTypeable<FSingularisMorphSuspensionSimModule>
+	  public Chaos::TSimulationModuleTypeable<FSingularisMorphVehicleSuspensionSimModule>
 {
 	friend FSingularisMorphSuspensionSimModuleData;
 	friend FSingularisMorphSuspensionOutputData;
 
 public:
 	DEFINE_CHAOSSIMTYPENAME(SingularisMorphSuspensionSim);
-	FSingularisMorphSuspensionSimModule(const FSingularisMorphSuspensionSettings& Settings);
+	FSingularisMorphVehicleSuspensionSimModule(const FSingularisMorphSuspensionSettings& Settings);
 
 	virtual TSharedPtr<Chaos::FModuleNetData> GenerateNetData(const int32 SimArrayIndex) const override
 	{
@@ -156,7 +157,7 @@ public:
 		);
 	}
 
-	virtual ~FSingularisMorphSuspensionSimModule() override;
+	virtual ~FSingularisMorphVehicleSuspensionSimModule() override;
 
 	virtual Chaos::FSimOutputData* GenerateOutputData() const override
 	{
@@ -205,7 +206,7 @@ private:
  */
 class FSingularisMorphSuspensionSimFactory
 	: public Chaos::FSimFactoryModule<FSingularisMorphSuspensionSimModuleData>,
-	  public Chaos::TSimulationModuleTypeable<FSingularisMorphSuspensionSimModule,
+	  public Chaos::TSimulationModuleTypeable<FSingularisMorphVehicleSuspensionSimModule,
 	                                          FSingularisMorphSuspensionSimFactory>,
 	  public Chaos::TSimFactoryAutoRegister<FSingularisMorphSuspensionSimFactory>
 {
