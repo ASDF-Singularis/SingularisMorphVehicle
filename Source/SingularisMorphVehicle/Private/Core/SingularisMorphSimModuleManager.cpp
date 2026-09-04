@@ -160,7 +160,7 @@ void FSingularisMorphSimModuleManager::OnShowDebugInfo(
 	{
 		if (FSingularisMorphSimModuleManager* Manager = GetManagerFromScene(HUD->GetWorld()->GetPhysicsScene()))
 		{
-			int32 ShowVehicleIndex = 0;
+			auto ShowVehicleIndex = 0;
 			if (!Manager->CUVehicles.IsEmpty())
 			{
 				TStrongObjectPtr<USingularisMorphVehicleSimulationComponent> StrongPtr = Manager->CUVehicles[

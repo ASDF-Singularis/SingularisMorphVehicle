@@ -4,6 +4,8 @@
 
 #include "Core/SingularisMorphSimModuleManager.h"
 
+DEFINE_LOG_CATEGORY(LogSingularisMorphVehicle);
+
 #define LOCTEXT_NAMESPACE "FSingularisMorphVehicleModule"
 
 void FSingularisMorphVehicleModule::StartupModule()

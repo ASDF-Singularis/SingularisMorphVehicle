@@ -23,7 +23,7 @@ void FSingularisMorphVehicleAnimationInstanceProxy::SetModularVehicleComponent(
 		ModuleInstances.AddZeroed(NumOfModules);
 
 		// 2) 遍历初始化每个模块的骨骼名称与默认偏移量
-		for (int32 ModuleIndex = 0; ModuleIndex < ModuleInstances.Num(); ++ModuleIndex)
+		for (auto ModuleIndex = 0; ModuleIndex < ModuleInstances.Num(); ++ModuleIndex)
 		{
 			FSingularisMorphModuleAnimationData& ModuleInstance = ModuleInstances[ModuleIndex];
 			const FSingularisMorphModuleAnimationSetup& ModuleSetup = ModuleAnimationSetups[ModuleIndex];
@@ -51,7 +51,7 @@ void FSingularisMorphVehicleAnimationInstanceProxy::PreUpdate(UAnimInstance* InA
 			{
 				int32 NumNew = ModularVehicleComponent->GetModuleAnimationSetups().Num() - ModuleInstances.Num();
 				int32 StartIdx = ModuleInstances.Num();
-				for (int32 I = 0; I < NumNew; I++)
+				for (auto I = 0; I < NumNew; I++)
 				{
 					FSingularisMorphModuleAnimationData ModuleInstance;
 					ModuleInstance.BoneName = ModularVehicleComponent->GetModuleAnimationSetups()[StartIdx + I].
@@ -68,7 +68,7 @@ void FSingularisMorphVehicleAnimationInstanceProxy::PreUpdate(UAnimInstance* InA
 		if (const USingularisMorphVehicleSimulationComponent* ModularVehicleComponent = VehicleAnimInstance->
 			GetModularVehicleComponent())
 		{
-			for (int32 ModuleIndex = 0; ModuleIndex < ModuleInstances.Num(); ++ModuleIndex)
+			for (auto ModuleIndex = 0; ModuleIndex < ModuleInstances.Num(); ++ModuleIndex)
 			{
 				FSingularisMorphModuleAnimationData& ModuleInstance = ModuleInstances[ModuleIndex];
 				if (ModularVehicleComponent->GetModuleAnimationSetups().IsValidIndex(ModuleIndex))

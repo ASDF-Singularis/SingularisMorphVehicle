@@ -63,7 +63,7 @@ void ASingularisMorphVehicleClusterPawn::BeginPlay()
 
 			if (const auto* SKMComp = Cast<USkeletalMeshComponent>(Primitive))
 			{
-				for (int32 I = 0; I < SKMComp->Bodies.Num(); I++)
+				for (auto I = 0; I < SKMComp->Bodies.Num(); I++)
 					BoneIds.Add(I);
 			}
 			else if (Cast<UStaticMeshComponent>(Primitive) && Primitive->HasValidPhysicsState())

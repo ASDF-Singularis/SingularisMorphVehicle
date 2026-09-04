@@ -182,7 +182,7 @@ void FAnimNode_SingularisMorphVehicleController::InitializeBoneReferences(const 
 	const int32 NumModules = ModuleAnimData.Num();
 	Modules.Empty(NumModules);
 
-	for (int32 ModuleIndex = 0; ModuleIndex < NumModules; ++ModuleIndex)
+	for (auto ModuleIndex = 0; ModuleIndex < NumModules; ++ModuleIndex)
 	{
 		auto Module = new(Modules)FSingularisMorphModuleLookupData();
 		Module->ModuleIndex = ModuleIndex;

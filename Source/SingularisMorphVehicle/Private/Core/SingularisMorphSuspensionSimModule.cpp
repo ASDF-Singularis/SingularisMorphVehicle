@@ -119,7 +119,7 @@ void FSingularisMorphSuspensionSimModule::Simulate(
 {
 	{
 		CurrentTimeDilation = FMath::Max(Inputs.CurrentTimeDilation, SMALL_NUMBER);
-		float ForceIntoSurface = 0.0f;
+		auto ForceIntoSurface = 0.0f;
 		if (SpringDisplacement > 0)
 		{
 			float Damping = Setup().SpringDamping;

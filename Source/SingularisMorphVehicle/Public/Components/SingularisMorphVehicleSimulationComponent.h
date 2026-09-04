@@ -10,8 +10,6 @@
 #include "Types/SingularisMorphVehicleSimType.h"
 #include "SingularisMorphVehicleSimulationComponent.generated.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(LogSingularisMorphBase, Log, All);
-
 namespace Chaos
 {
 	struct FSimOutputData;

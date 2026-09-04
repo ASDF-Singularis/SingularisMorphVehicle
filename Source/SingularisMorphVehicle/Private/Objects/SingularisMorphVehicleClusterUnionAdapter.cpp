@@ -4,6 +4,7 @@
 #include <Physics/Experimental/PhysScene_Chaos.h>
 #include <PhysicsEngine/ClusterUnionComponent.h>
 
+#include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleClusterUnionComponent.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 
@@ -142,7 +143,7 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentAdded(
 	bDirty = true;
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[ClusterUnionAdapter] OnClusterComponentAdded: Component=%s"),
 		*GetNameSafe(Component)
@@ -159,7 +160,7 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentRemoved(
 	bDirty = true;
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[ClusterUnionAdapter] OnClusterComponentRemoved: Component=%s"),
 		*GetNameSafe(Component)

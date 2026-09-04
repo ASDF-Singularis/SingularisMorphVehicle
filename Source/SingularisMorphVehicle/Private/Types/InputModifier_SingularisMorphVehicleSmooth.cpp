@@ -9,7 +9,7 @@ FInputActionValue UInputModifier_SingularisMorphVehicleSmooth::ModifyRaw_Impleme
 )
 {
 	// Only handle scalar (float) inputs here.
-	float Current = CurrentValue.Get<float>();
+	auto Current = CurrentValue.Get<float>();
 
 	// No Fall rate just snaps to zero
 	if (FMath::Abs(Current) < SMALL_NUMBER)

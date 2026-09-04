@@ -1,5 +1,6 @@
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 
+#include "SingularisMorphVehicle.h"
 #include "Chaos/ClusterUnionManager.h"
 #include "Chaos/DebugDrawQueue.h"
 #include "Chaos/PhysicsObjectCollisionInterface.h"
@@ -20,7 +21,6 @@
 #include "Types/SingularisMorphVehicleDefaultAsyncInput.h"
 
 FSingularisMorphVehicleDebugParams GSingularisMorphVehicleDebugParams;
-DEFINE_LOG_CATEGORY(LogSingularisMorphVehicleSim);
 
 auto bSingularisMorphVehicle_DumpModuleTreeStructure_Enabled = false;
 FAutoConsoleVariableRef CVarSingularisMorphVehicleDumpModuleTreeStructureEnabled(
@@ -70,14 +70,14 @@ FAutoConsoleVariableRef CVarSingularisMorphVehiclesDisableAnim(
 
 void FSingularisMorphVehicleSimulation::Initialize(TUniquePtr<Chaos::FSimModuleTree>& InSimModuleTree)
 {
-	UE_LOGF(LogSingularisMorphVehicleSim, Log, "FSingularisMorphVehicleSimulation::Initialize");
+	UE_LOGF(LogSingularisMorphVehicle, Log, "FSingularisMorphVehicleSimulation::Initialize");
 
 	SimModuleTree = MoveTemp(InSimModuleTree);
 }
 
 void FSingularisMorphVehicleSimulation::Terminate()
 {
-	UE_LOGF(LogSingularisMorphVehicleSim, Log, "FSingularisMorphVehicleSimulation::Terminate");
+	UE_LOGF(LogSingularisMorphVehicle, Log, "FSingularisMorphVehicleSimulation::Terminate");
 
 	RootParticle = nullptr;
 	SimModuleTree.Reset(nullptr);
@@ -112,12 +112,12 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 
 			// Diagnostic: dump tree structure after fixup
 			UE_LOG(
-				LogSingularisMorphVehicleSim,
+				LogSingularisMorphVehicle,
 				Log,
 				TEXT("=== PT Tree after Fixup: %d nodes ==="),
 				SimModuleTree->GetNumNodes()
 			);
-			for (int32 N = 0; N < SimModuleTree->GetNumNodes(); N++)
+			for (auto N = 0; N < SimModuleTree->GetNumNodes(); N++)
 			{
 				Chaos::ISimulationModuleBase* Mod = SimModuleTree->GetNode(N).SimModule;
 				if (Mod)
@@ -127,7 +127,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 					FString DebugStr;
 					Mod->GetDebugString(DebugStr);
 					UE_LOG(
-						LogSingularisMorphVehicleSim,
+						LogSingularisMorphVehicle,
 						Log,
 						TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
 						N,
@@ -143,7 +143,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 					{
 						auto* Susp = Mod->Cast<Chaos::FSuspensionBaseInterface>();
 						UE_LOG(
-							LogSingularisMorphVehicleSim,
+							LogSingularisMorphVehicle,
 							Log,
 							TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
 							Susp->GetWheelSimTreeIndex(),
@@ -154,7 +154,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 					{
 						auto* Wheel = Mod->Cast<Chaos::FWheelBaseInterface>();
 						UE_LOG(
-							LogSingularisMorphVehicleSim,
+							LogSingularisMorphVehicle,
 							Log,
 							TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
 							Wheel->GetSuspensionSimTreeIndex(),
@@ -183,14 +183,14 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 		if (bSingularisMorphVehicle_DumpModuleTreeStructure_Enabled)
 		{
-			UE_LOGF(LogSingularisMorphVehicleSim, Warning, "SimTreeModules:");
+			UE_LOGF(LogSingularisMorphVehicle, Warning, "SimTreeModules:");
 			for (auto I = 0; I < SimModuleTree->GetNumNodes(); I++)
 			{
 				if (Chaos::ISimulationModuleBase* Module = SimModuleTree->GetNode(I).SimModule)
 				{
 					FString String;
 					Module->GetDebugString(String);
-					UE_LOGF(LogSingularisMorphVehicleSim, Warning, "..%ls", *String);
+					UE_LOGF(LogSingularisMorphVehicle, Warning, "..%ls", *String);
 				}
 			}
 		}
@@ -252,7 +252,7 @@ void FSingularisMorphVehicleSimulation::CacheRootParticle(IPhysicsProxyBase* Pro
 
 	default:
 		{
-			UE_LOGF(LogSingularisMorphVehicleSim, Error, "Unsupported Particle type");
+			UE_LOGF(LogSingularisMorphVehicle, Error, "Unsupported Particle type");
 		}
 		break;
 	}
@@ -455,7 +455,7 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 					else
 					{
 						UE_LOG(
-							LogSingularisMorphVehicleSim,
+							LogSingularisMorphVehicle,
 							Warning,
 							TEXT("Suspension[GUID=%d]: WheelSimTreeIndex=INVALID! WheelRadius=0."),
 							Suspension->GetGuid()

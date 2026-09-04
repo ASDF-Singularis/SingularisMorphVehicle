@@ -8,7 +8,7 @@
  */
 static bool WriteCustomReport(FString FileName, TArray<FString>& FileLines)
 {
-	bool ReportGenerated = false;
+	auto ReportGenerated = false;
 
 	if (FileLines.Num())
 	{

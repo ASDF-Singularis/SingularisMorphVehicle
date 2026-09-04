@@ -1,5 +1,6 @@
 #include "Core/SingularisMorphVehicleBuilder.h"
 
+#include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleSUComponent.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
@@ -12,7 +13,7 @@ void FSingularisMorphVehicleBuilder::GenerateSimTree(USingularisMorphVehicleSimu
 	if (!ModularVehicle) return;
 
 	// 2) 根据网络模式决定是否启用动画
-	bool RequiresAnimation = true;
+	auto RequiresAnimation = true;
 	if (ModularVehicle->GetOwner())
 		RequiresAnimation = ModularVehicle->GetOwner()->GetNetMode() != NM_DedicatedServer;
 
@@ -42,14 +43,14 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 	// 导致悬挂↔车轮链接全部失败（WheelSimTreeIdx=-1），悬挂失去弹簧力、轮子下坠。
 	const int32 NumNodes = SimModuleTree->GetNumNodes();
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("=== FixupTreeLinks: %d tree slots, TransmissionNode=%s ==="),
 		NumNodes,
 		TransmissionNode ? TEXT("found") : TEXT("NOT found")
 	);
 
-	for (int32 I = 0; I < NumNodes; I++)
+	for (auto I = 0; I < NumNodes; I++)
 	{
 		ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(I);
 		if (!Module)
@@ -74,7 +75,7 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 					Wheel->SetSuspensionSimTreeIndex(Suspension->GetTreeIndex());
 					Suspension->SetWheelSimTreeIndex(Wheel->GetTreeIndex());
 					UE_LOG(
-						LogSingularisMorphBase,
+						LogSingularisMorphVehicle,
 						Log,
 						TEXT("  Fixup: Suspension[%d] <-> Wheel[%d] (parent link) | SuspGUID=%d, WheelGUID=%d"),
 						Suspension->GetTreeIndex(),
@@ -101,7 +102,7 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 					Wheel->SetSuspensionSimTreeIndex(Suspension->GetTreeIndex());
 					Suspension->SetWheelSimTreeIndex(Wheel->GetTreeIndex());
 					UE_LOG(
-						LogSingularisMorphBase,
+						LogSingularisMorphVehicle,
 						Log,
 						TEXT("  Fixup: Suspension[%d] <-> Wheel[%d] (child link) | SuspGUID=%d, WheelGUID=%d"),
 						Suspension->GetTreeIndex(),
@@ -120,7 +121,7 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 			const int32 TransIdx = TransmissionNode->SimModule->GetTreeIndex();
 			SimModuleTree->Reparent(WheelIdx, TransIdx);
 			UE_LOG(
-				LogSingularisMorphBase,
+				LogSingularisMorphVehicle,
 				Log,
 				TEXT("  Fixup: Wheel[%d] reparented to Transmission[%d]"),
 				WheelIdx,
@@ -129,5 +130,5 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 		}
 	}
 
-	UE_LOG(LogSingularisMorphBase, Log, TEXT("=== FixupTreeLinks complete ==="));
+	UE_LOG(LogSingularisMorphVehicle, Log, TEXT("=== FixupTreeLinks complete ==="));
 }

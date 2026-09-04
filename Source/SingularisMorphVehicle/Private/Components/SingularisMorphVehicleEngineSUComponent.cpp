@@ -36,7 +36,7 @@ Chaos::ISimulationModuleBase* USingularisMorphVehicleEngineSUComponent::CreateNe
 	constexpr float NumSamples = 20;
 	for (float X = 0.0; X <= MaxRPM; X += MaxRPM / NumSamples)
 	{
-		float MinVal = 0.0f, MaxVal = 0.0f;
+		auto MinVal = 0.0f, MaxVal = 0.0f;
 		TorqueCurve.GetRichCurveConst()->GetValueRange(MinVal, MaxVal);
 		const float Y = this->TorqueCurve.GetRichCurveConst()->Eval(X) / MaxVal;
 		Settings.TorqueCurve.AddNormalized(Y);

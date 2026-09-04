@@ -504,7 +504,7 @@ void USingularisMorphVehicleSchedulerSubsystem::ParallelUpdateVehicles()
 		while ((NextAsyncOutput = AsyncCallback->PopOutputData_External()))
 		{
 			// 遍历当前输出帧中每个载具的异步结果
-			for (int32 VehicleIdx = 0; VehicleIdx < NextAsyncOutput->VehicleOutputs.Num(); ++VehicleIdx)
+			for (auto VehicleIdx = 0; VehicleIdx < NextAsyncOutput->VehicleOutputs.Num(); ++VehicleIdx)
 			{
 				if (!NextAsyncOutput->VehicleOutputs[VehicleIdx])
 					continue;

@@ -7,6 +7,7 @@
 #include <PhysicsProxy/SingleParticlePhysicsProxy.h>
 #include <SimModule/SimulationModuleBase.h>
 
+#include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleClutchSUComponent.h"
 #include "Components/SingularisMorphVehicleEngineSUComponent.h"
 #include "Components/SingularisMorphVehicleSUComponent.h"
@@ -16,8 +17,6 @@
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 #include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
-
-DEFINE_LOG_CATEGORY(LogSingularisMorphBase);
 
 USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationComponent()
 {
@@ -31,7 +30,7 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 	SuspensionTraceCollisionResponses.SetAllChannels(ECR_Block);
 	SuspensionTraceCollisionResponses.SetResponse(ECC_Vehicle, ECR_Ignore);
 	SuspensionTraceCollisionResponses.SetResponse(ECC_EngineTraceChannel1, ECR_Ignore);
-	
+
 	bUsingNetworkPhysicsPrediction = Chaos::FPhysicsSolverBase::IsNetworkPhysicsPredictionEnabled();
 	CurrentAsyncDataType = AsyncInvalid;
 }
@@ -60,7 +59,7 @@ void USingularisMorphVehicleSimulationComponent::OnCreatePhysicsState()
 	Super::OnCreatePhysicsState();
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("=== OnCreatePhysicsState: PhysicsAdapter=%s ==="),
 		PhysicsAdapter ? *PhysicsAdapter->GetClass()->GetName() : TEXT("null")
@@ -76,7 +75,7 @@ void USingularisMorphVehicleSimulationComponent::OnCreatePhysicsState()
 	// 2) 创建物理线程端模拟
 	CreateVehicleSimulation();
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("=== OnCreatePhysicsState: VehicleSimulationPT=%s, Proxy=%s ==="),
 		VehicleSimulationPT.IsValid() ? TEXT("valid") : TEXT("null"),
@@ -140,7 +139,7 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 	{
 		if (Chaos::FSimModuleTree* SimTree = VehicleSimulationPT->AccessSimComponentTree().Get())
 		{
-			for (int32 N = 0; N < SimTree->GetNumNodes(); N++)
+			for (auto N = 0; N < SimTree->GetNumNodes(); N++)
 			{
 				if (Chaos::ISimulationModuleBase* Mod = SimTree->GetNode(N).SimModule)
 				{
@@ -162,7 +161,7 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 void USingularisMorphVehicleSimulationComponent::FinalizeModuleUpdates()
 {
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[FinalizeModuleUpdates] VehicleSimulationPT=%s, StoredTreeUpdates pending adds=%d"),
 		VehicleSimulationPT.IsValid() ? TEXT("valid") : TEXT("null"),
@@ -193,12 +192,12 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	// 0) 底盘守卫：映射结果中必须存在 Chassis 类型的 SU 才能重建。
 	//    车身件脱离集群（载具解体）后，直接清除全部模拟模块：
 	//    释放悬挂约束、移除树节点、清空缓存，剩余部件作为独立碎片由物理引擎接管。
-	bool bHasChassis = false;
+	auto bHasChassis = false;
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
 		for (USingularisMorphVehicleSUComponent* SUComp :
-			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
 			{
@@ -211,7 +210,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	if (!bHasChassis)
 	{
 		UE_LOG(
-			LogSingularisMorphBase,
+			LogSingularisMorphVehicle,
 			Warning,
 			TEXT("[RebuildFromSnapshot] Chassis not found in snapshot (%d entities) - clearing all simulation modules"),
 			Snapshot.Entities.Num()
@@ -249,7 +248,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		ExistingGuids.Add(Pair.Value.Guid);
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[RebuildFromSnapshot] Removing %d old modules, adding %d from snapshot"),
 		ExistingGuids.Num(),
@@ -348,7 +347,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!Entity.PrimitiveComponent) continue;
 		for (USingularisMorphVehicleSUComponent* SUComp :
-			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
 			{
@@ -364,7 +363,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!Entity.PrimitiveComponent) continue;
 		for (USingularisMorphVehicleSUComponent* SUComp :
-			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (!SUComp || SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Engine) continue;
 
@@ -383,9 +382,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 				if (auto* TransSU = Cast<USingularisMorphVehicleTransmissionSUComponent>(
 					ClutchSU->LinkedTransmission.GetComponent(Owner)
 				))
-				{
 					AddEntity(TransSU, ClutchIndex);
-				}
 			}
 		}
 	}
@@ -397,7 +394,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!Entity.PrimitiveComponent) continue;
 		for (USingularisMorphVehicleSUComponent* SUComp :
-			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp && SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Suspension)
 			{
@@ -413,7 +410,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!Entity.PrimitiveComponent) continue;
 		for (USingularisMorphVehicleSUComponent* SUComp :
-			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (!SUComp || SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Wheel) continue;
 
@@ -430,7 +427,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!Entity.PrimitiveComponent) continue;
 		for (USingularisMorphVehicleSUComponent* SUComp :
-			Subsystem->FindSUComponents(Entity.PrimitiveComponent))
+		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (!SUComp) continue;
 			const ESingularisMorphVehicleModuleType Type = SUComp->GetModuleType();
@@ -575,7 +572,7 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 	VehiclePhysicsOutput->SimTreeOutputData.Reserve(NumItems);
 
 	// 2) 对每个模拟输出数据执行插值
-	for (int32 I = 0; I < NumItems; ++I)
+	for (auto I = 0; I < NumItems; ++I)
 	{
 		Chaos::FSimOutputData* CurrentSimData = CurrentAsyncOutput->
 		                                        VehicleSimOutput.SimTreeOutputData[I];
@@ -611,8 +608,8 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 	}
 
 	// 3) 分发输出数据到各 SU Component
-	int32 CallbackCount = 0;
-	for (int32 I = 0; I < NumItems; ++I)
+	auto CallbackCount = 0;
+	for (auto I = 0; I < NumItems; ++I)
 	{
 		if (!VehiclePhysicsOutput->SimTreeOutputData[I]) continue;
 
@@ -659,7 +656,7 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 		}
 	}
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[ParallelUpdate] NumItems=%d, OnOutputReady called=%d, PhysicsGuidToComponent size=%d"),
 		NumItems,
@@ -714,7 +711,7 @@ void USingularisMorphVehicleSimulationComponent::ProduceInput(
 	AsyncInput->PhysicsInputs.TraceType = TraceType;
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[SimComp] ProduceInput: PhysicsStep=%d, Proxy=%s, KeepAwake=%d"),
 		PhysicsStep,
@@ -766,7 +763,7 @@ void USingularisMorphVehicleSimulationComponent::PostUpdate()
 		++UpdatedCount;
 	}
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[PostUpdate] ModuleAnimationSetups=%d, Updated=%d"),
 		ModuleAnimationSetups.Num(),
@@ -872,7 +869,7 @@ IPhysicsProxyBase* USingularisMorphVehicleSimulationComponent::GetPhysicsProxy()
 
 int32 USingularisMorphVehicleSimulationComponent::GenerateNewGuid()
 {
-	static int32 Val = 0;
+	static auto Val = 0;
 	return Val++;
 }
 
@@ -928,7 +925,7 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 		                                 : SimulationModuleTree.Get();
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[AddSimModule] SimTree=%s, ParentIndex=%d"),
 		SimTree ? TEXT("valid") : TEXT("null"),
@@ -942,7 +939,7 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 
 	// 3) 在树更新中注册节点
 	const int32 TreeIndex = StoredTreeUpdates.AddNodeBelow(ParentIndex, CoreModule);
-	UE_LOG(LogSingularisMorphBase, Log, TEXT("[AddSimModule] AddNodeBelow returned TreeIndex=%d"), TreeIndex);
+	UE_LOG(LogSingularisMorphVehicle, Log, TEXT("[AddSimModule] AddNodeBelow returned TreeIndex=%d"), TreeIndex);
 	if (TreeIndex == INDEX_NONE) return INDEX_NONE;
 
 	// 4) 配置模块属性
@@ -965,7 +962,7 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 	CoreModule->SetComponentTransform(ComponentTransform);
 
 	UE_LOG(
-		LogSingularisMorphBase,
+		LogSingularisMorphVehicle,
 		Log,
 		TEXT("[AddSimModule] SetInitialParticleTransform=%s, SetComponentTransform=%s"),
 		*InitialTransform.ToHumanReadableString(),

@@ -11,8 +11,6 @@
 #include "SimModule/SimModulesInclude.h"
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(LogSingularisMorphVehicleSim, Log, All);
-
 struct FSingularisMorphVehicleAsyncInput;
 struct FSingularisMorphChaosSimModuleManagerAsyncOutput;
 struct FModuleInputContainer;

@@ -1,6 +1,7 @@
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
 
 #include "PBDRigidsSolver.h"
+#include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "GeometryCollection/GeometryCollectionParticlesData.h"
@@ -43,7 +44,7 @@ namespace SingularisMorphVehicleCVars
 	 * 开启后使用 NetToken 替代完整序列化，大幅降低状态同步的带宽消耗。
 	 * 默认关闭，需在确认网络兼容性后启用。
 	 */
-	bool bEnableStateReducedBandwidth = false;
+	auto bEnableStateReducedBandwidth = false;
 	FAutoConsoleVariableRef EnableStateReducedBandwidth(
 		TEXT("p.ModularVehicle.EnableStateReducedBandwidth"),
 		bEnableStateReducedBandwidth,
@@ -53,7 +54,7 @@ namespace SingularisMorphVehicleCVars
 	 * 启用载具输入的网络令牌 + 增量序列化路径。
 	 * 开启后使用 NetToken 替代完整序列化，降低输入同步的带宽消耗。
 	 */
-	bool bEnableInputReducedBandwidth = false;
+	auto bEnableInputReducedBandwidth = false;
 	FAutoConsoleVariableRef EnableInputReducedBandwidth(
 		TEXT("p.ModularVehicle.EnableInputReducedBandwidth"),
 		bEnableInputReducedBandwidth,
@@ -63,7 +64,7 @@ namespace SingularisMorphVehicleCVars
 	 * 启用网络序列化的调试日志输出。
 	 * 仅在开发调试时开启，会产生大量日志影响性能。
 	 */
-	bool bEnableStateNetSerializeDebugPrinting = false;
+	auto bEnableStateNetSerializeDebugPrinting = false;
 	FAutoConsoleVariableRef EnableStateNetSerializeDebugPrinting(
 		TEXT("p.ModularVehicle.EnableStateNetSerializeDebugPrinting"),
 		bEnableStateNetSerializeDebugPrinting,
@@ -347,7 +348,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 	auto DeltaSource = static_cast<FNetworkSingularisMorphVehicleStates*>(DeltaSourceData);
 	UE_CLOGF(
 		bPrintDebugInfo,
-		LogSingularisMorphVehicleSim,
+		LogSingularisMorphVehicle,
 		Warning,
 		"====DeltaNetSerialize Saving: %d. ServerFrame: %d. DeltaSource_ServerFrame: %d Starting Bit: %lld",
 		Ar.IsSaving(),
@@ -381,7 +382,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 		{
 			UE_CLOGF(
 				bPrintDebugInfo,
-				LogSingularisMorphVehicleSim,
+				LogSingularisMorphVehicle,
 				Warning,
 				"==DeltaNetSerialize Generating Default Data for DeltaData Module %u",
 				InModuleTypeHash
@@ -390,7 +391,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 			if (DeltaData == nullptr)
 			{
 				UE_LOGF(
-					LogSingularisMorphVehicleSim,
+					LogSingularisMorphVehicle,
 					Error,
 					"Unable to generate net data for delta source when delta is invalid"
 				);
@@ -417,7 +418,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 				BitString += VehicleStateData.ModuleShouldSerialize[NetModuleIdx] ? "1" : "0";
 			UE_CLOGF(
 				bPrintDebugInfo,
-				LogSingularisMorphVehicleSim,
+				LogSingularisMorphVehicle,
 				Warning,
 				"==DeltaNetSerialize LOADING. Using ModuleShouldSerialize: %ls",
 				*BitString
@@ -436,7 +437,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 				int32 StartBit = Ar.IsSaving() ? BitWriter->GetNumBits() : BitReader->GetPosBits();
 				UE_CLOGF(
 					bPrintDebugInfo,
-					LogSingularisMorphVehicleSim,
+					LogSingularisMorphVehicle,
 					Warning,
 					"==DeltaNetSerialize LOADING. ModuleData: %d STA. Bit: %lld",
 					I,
@@ -454,7 +455,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 				int32 EndBit = Ar.IsSaving() ? BitWriter->GetNumBits() : BitReader->GetPosBits();
 				UE_CLOGF(
 					bPrintDebugInfo,
-					LogSingularisMorphVehicleSim,
+					LogSingularisMorphVehicle,
 					Warning,
 					"==DeltaNetSerialize LOADING. ModuleData: %d END. Bit: %lld Total: %d Error: %d",
 					I,
@@ -474,7 +475,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 				BitString += VehicleStateData.ModuleShouldSerialize[I] ? "1" : "0";
 			UE_CLOGF(
 				bPrintDebugInfo,
-				LogSingularisMorphVehicleSim,
+				LogSingularisMorphVehicle,
 				Warning,
 				"==DeltaNetSerialize SAVING. Using ModuleShouldSerialize: %ls",
 				*BitString
@@ -485,7 +486,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 			int32 StartBit = Ar.IsSaving() ? BitWriter->GetNumBits() : BitReader->GetPosBits();
 			UE_CLOGF(
 				bPrintDebugInfo,
-				LogSingularisMorphVehicleSim,
+				LogSingularisMorphVehicle,
 				Warning,
 				"==DeltaNetSerialize SAVING. ModuleData: %d STA. Bit: %lld - %ls",
 				I,
@@ -502,7 +503,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 			int32 EndBit = Ar.IsSaving() ? BitWriter->GetNumBits() : BitReader->GetPosBits();
 			UE_CLOGF(
 				bPrintDebugInfo,
-				LogSingularisMorphVehicleSim,
+				LogSingularisMorphVehicle,
 				Warning,
 				"==DeltaNetSerialize SAVING. ModuleData: %d END. Bit: %lld Size: %d - %ls",
 				I,
@@ -529,7 +530,7 @@ void FNetworkSingularisMorphVehicleStates::InterpolateData(
 	if (ModuleData.Num() != MinState.ModuleData.Num() || ModuleData.Num() != MaxState.ModuleData.Num())
 	{
 		UE_LOGF(
-			LogSingularisMorphVehicleSim,
+			LogSingularisMorphVehicle,
 			Error,
 			"Mismatch in module data num when interpolating between min and max states!"
 		);

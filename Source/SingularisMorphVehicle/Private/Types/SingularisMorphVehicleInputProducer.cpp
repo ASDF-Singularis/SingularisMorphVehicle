@@ -79,7 +79,7 @@ void USingularisMorphVehiclePlaybackInputProducer::InitializeContainer(
 {
 	Super::InitializeContainer(SetupData, NameMapOut, InInputQuantizationType);
 
-	int32 Seed = 123;
+	auto Seed = 123;
 	FRandomStream Random(Seed);
 	StartStep = 0;
 
@@ -88,7 +88,7 @@ void USingularisMorphVehiclePlaybackInputProducer::InitializeContainer(
 	InputsForFrame.Initialize(SetupData, NameMapOut);
 
 	PlaybackBuffer.Reserve(BufferLength);
-	for (int32 I = 0; I < BufferLength; I++)
+	for (auto I = 0; I < BufferLength; I++)
 	{
 		// copy initialized container into array
 		PlaybackBuffer.Emplace(InputsForFrame);
@@ -164,7 +164,7 @@ void USingularisMorphVehicleRandomInputProducer::ProduceInput(
 	FModuleInputContainer& InOutContainer
 )
 {
-	int32 Seed = 123;
+	auto Seed = 123;
 	static FRandomStream Random(Seed);
 
 	// new control settings generated every ChangeInputFrequency number of frames (every frame is too quick)
