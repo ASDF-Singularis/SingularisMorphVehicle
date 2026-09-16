@@ -16,7 +16,6 @@
 #include "Runtime/Experimental/Chaos/Private/Chaos/PhysicsObjectInternal.h"
 #include "SimModule/ModuleInput.h"
 #include "SimModule/SimModulesInclude.h"
-#include "Types/SingularisMorphVehicleDefaultAsyncInput.h"
 
 FSingularisMorphVehicleDebugParams GSingularisMorphVehicleDebugParams;
 
@@ -99,19 +98,33 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 	if (NextTreeUpdatesInternal.IsEmpty())
 		return;
 
-	UE::TReadScopeLock InputConfigLock(TreeConfigurationLock);
+	// 树结构变更必须以写锁保护：AppendTreeUpdates 会新增/删除节点并可能重分配节点数组，
+	// 而 GenerateReplicationStructure 在游戏线程以读锁遍历同一棵树。
+	// 若此处用读锁，两个读者互不排斥，游戏线程会读到半更新的树（悬垂模块指针、越界索引）。
+	UE::TWriteScopeLock InputConfigLock(TreeConfigurationLock);
 
 	if (SimModuleTree.IsValid())
 	{
 		for (Chaos::FSimTreeUpdates& TreeUpdate : NextTreeUpdatesInternal)
 		{
+			// FSimTreeUpdates::AppendTreeUpdates 先处理新增再处理删除：同一批次内"新增后删除"
+			// 的模块会在删除阶段被释放，事后读取待新增链表中的指针即为悬垂访问。
+			// 因此先记录类型与 GUID，提交后按 GUID 从树中取真实树索引上报。
+			TArray<TPair<FName, int32>> RequestedModules;
+			RequestedModules.Reserve(TreeUpdate.GetNewModules().Num());
+			for (const Chaos::FPendingModuleAdds& ModuleAdd : TreeUpdate.GetNewModules())
+			{
+				if (ModuleAdd.NewSimModule)
+					RequestedModules.Emplace(ModuleAdd.NewSimModule->GetSimType(), ModuleAdd.NewSimModule->GetGuid());
+			}
+
 			SimModuleTree->AppendTreeUpdates(TreeUpdate);
 			FSingularisMorphVehicleBuilder::FixupTreeLinks(SimModuleTree);
 
-			// Diagnostic: dump tree structure after fixup
+			// 树变更后输出模块结构快照，供物理线程侧问题定位
 			UE_LOG(
 				LogSingularisMorphVehicle,
-				Log,
+				Verbose,
 				TEXT("=== PT Tree after Fixup: %d nodes ==="),
 				SimModuleTree->GetNumNodes()
 			);
@@ -126,7 +139,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 					Mod->GetDebugString(DebugStr);
 					UE_LOG(
 						LogSingularisMorphVehicle,
-						Log,
+						Verbose,
 						TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
 						N,
 						*DebugStr,
@@ -142,7 +155,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 						auto* Susp = Mod->Cast<Chaos::FSuspensionBaseInterface>();
 						UE_LOG(
 							LogSingularisMorphVehicle,
-							Log,
+							Verbose,
 							TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
 							Susp->GetWheelSimTreeIndex(),
 							Susp->GetMaxSpringLength()
@@ -153,7 +166,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 						auto* Wheel = Mod->Cast<Chaos::FWheelBaseInterface>();
 						UE_LOG(
 							LogSingularisMorphVehicle,
-							Log,
+							Verbose,
 							TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
 							Wheel->GetSuspensionSimTreeIndex(),
 							Wheel->GetWheelRadius()
@@ -162,18 +175,19 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 				}
 			}
 
-			// NewlyCreatedModuleGuids will be passed back to GT to inform that these now exist
-			for (const Chaos::FPendingModuleAdds& ModuleAdd : TreeUpdate.GetNewModules())
+			// NewlyCreatedModuleGuids 供游戏线程确认模块已存在。
+			// 同批次自增自删的模块在树中已不存在，不上报（其 GUID 早已被游戏线程回收）。
+			for (const TPair<FName, int32>& Requested : RequestedModules)
 			{
-				if (ModuleAdd.NewSimModule)
+				for (auto N = 0; N < SimModuleTree->GetNumNodes(); N++)
 				{
+					Chaos::ISimulationModuleBase* Mod = SimModuleTree->GetNode(N).SimModule;
+					if (!Mod || Mod->GetGuid() != Requested.Value) continue;
+
 					NewlyCreatedModuleGuids.Add(
-						Chaos::FCreatedModule(
-							ModuleAdd.NewSimModule->GetSimType(),
-							ModuleAdd.NewSimModule->GetGuid(),
-							ModuleAdd.NewSimModule->GetTreeIndex()
-						)
+						Chaos::FCreatedModule(Requested.Key, Requested.Value, Mod->GetTreeIndex())
 					);
+					break;
 				}
 			}
 		}
@@ -269,9 +283,9 @@ void FSingularisMorphVehicleSimulation::Simulate(
 	ActionTreeUpdates();
 
 	auto RigidsSolver = Proxy->GetSolver<Chaos::FPhysicsSolver>();
-	int CurrentFrame = -1;
 	if (RigidsSolver != nullptr)
 	{
+		int32 CurrentFrame = -1;
 		Chaos::FRewindData* RewindData = RigidsSolver->GetRewindData();
 		if (RewindData != nullptr)
 			CurrentFrame = RewindData->CurrentFrame();
@@ -295,15 +309,6 @@ void FSingularisMorphVehicleSimulation::SimulateModuleTree(
 		int InitialNum = SimModuleTree->GetSimulationModuleTree().Num();
 		if (InitialNum == 0)
 			return;
-		//if (InWorld)
-		//{
-		//	WriteNetReport(InWorld->IsNetMode(NM_Client), FString::Printf(TEXT("X %s,  R %s,  V %s,  W %s")
-		//		, *Proxy->GetParticle_Internal()->X().ToString()
-		//		, *Proxy->GetParticle_Internal()->R().ToString()
-		//		, *Proxy->GetParticle_Internal()->V().ToString()
-		//		, *Proxy->GetParticle_Internal()->W().ToString()));
-		//}
-
 		UE::TReadScopeLock InputConfigLock(InputConfigurationLock);
 
 		FModuleInputContainer Container = InputData.PhysicsInputs.NetworkInputs.VehicleInputs.Container;
@@ -436,25 +441,28 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 		{
 			if (Node.IsValid() && Node.SimModule && Node.SimModule->IsEnabled())
 			{
-				if (Node.SimModule->IsClustered() && Node.SimModule->IsBehaviourType(Raycast))
+				// 按类型容器判定而非 IsBehaviourType(Raycast) 行为标志：
+				// 行为标志不构成类型保证，若存在其它返回 Raycast 的模块，static_cast 即为未定义行为
+				if (FSuspensionBaseInterface* Suspension = Node.SimModule->Cast<FSuspensionBaseInterface>();
+					Suspension && Node.SimModule->IsClustered())
 				{
 					FSpringTrace OutTrace;
-					auto Suspension = static_cast<FSuspensionBaseInterface*>(Node.SimModule);
 					// would be cleaner an faster to just store radius in suspension also
 					float WheelRadius = 0;
 					const int32 WheelLinkIdx = Suspension->GetWheelSimTreeIndex();
-					if (WheelLinkIdx != ISimulationModuleBase::INVALID_IDX)
+					if (ModuleArray.IsValidIndex(WheelLinkIdx))
 					{
-						auto Wheel = static_cast<FWheelBaseInterface*>(ModuleArray[WheelLinkIdx].
-							SimModule);
-						if (Wheel)
+						if (const FWheelBaseInterface* Wheel = ModuleArray[WheelLinkIdx].SimModule
+							                                       ? ModuleArray[WheelLinkIdx].SimModule->Cast<
+								                                       FWheelBaseInterface>()
+							                                       : nullptr)
 							WheelRadius = Wheel->GetWheelRadius();
 					}
 					else
 					{
 						UE_LOG(
 							LogSingularisMorphVehicle,
-							Warning,
+							Verbose,
 							TEXT("Suspension[GUID=%d]: WheelSimTreeIndex=INVALID! WheelRadius=0."),
 							Suspension->GetGuid()
 						);
@@ -554,19 +562,21 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 		{
 			if (Node.IsValid() && Node.SimModule && Node.SimModule->IsEnabled())
 			{
-				if (Node.SimModule->IsClustered() && Node.SimModule->IsBehaviourType(Raycast))
+				if (FSuspensionBaseInterface* Suspension = Node.SimModule->Cast<FSuspensionBaseInterface>();
+					Suspension && Node.SimModule->IsClustered())
 				{
 					QUICK_SCOPE_CYCLE_COUNTER(STAT_VehicleSim_SuspenssionRaycast);
 					FSpringTrace OutTrace;
-					auto Suspension = static_cast<FSuspensionBaseInterface*>(Node.SimModule);
 
 					// would be cleaner an faster to just store radius in suspension also
 					float WheelRadius = 0;
-					if (Suspension->GetWheelSimTreeIndex() != ISimulationModuleBase::INVALID_IDX)
+					if (const int32 WheelLinkIdx = Suspension->GetWheelSimTreeIndex();
+						ModuleArray.IsValidIndex(WheelLinkIdx))
 					{
-						auto Wheel = static_cast<FWheelBaseInterface*>(ModuleArray[Suspension->GetWheelSimTreeIndex()].
-							SimModule);
-						if (Wheel)
+						if (const FWheelBaseInterface* Wheel = ModuleArray[WheelLinkIdx].SimModule
+							                                       ? ModuleArray[WheelLinkIdx].SimModule->Cast<
+								                                       FWheelBaseInterface>()
+							                                       : nullptr)
 							WheelRadius = Wheel->GetWheelRadius();
 					}
 
@@ -675,54 +685,61 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 						}
 					}
 
+					// 悬挂射线开关关闭时不做落点解算、不写地面摩擦与地面交互，
+					// 弹簧长度退回最大行程（与悬挂 Simulate 的兜底分支一致）：
+					// 该开关改变物理结果，仅用于调试对比，不是纯显示开关。
 					float Offset = Suspension->GetMaxSpringLength();
 					if (bHasActualHit && GSingularisMorphVehicleDebugParams.SuspensionRaycastsEnabled)
 					{
 						Offset = HitResult.Distance - WheelRadius;
 
-						if (Suspension->GetWheelSimTreeIndex() != ISimulationModuleBase::INVALID_IDX)
+						FWheelBaseInterface* Wheel = nullptr;
+						if (const int32 WheelLinkIdx = Suspension->GetWheelSimTreeIndex();
+							ModuleArray.IsValidIndex(WheelLinkIdx))
 						{
-							const FSimModuleTree::FSimModuleNode& WheelNode = ModuleArray[Suspension->
-								GetWheelSimTreeIndex()];
+							Wheel = ModuleArray[WheelLinkIdx].SimModule
+								        ? ModuleArray[WheelLinkIdx].SimModule->Cast<FWheelBaseInterface>()
+								        : nullptr;
+						}
 
-							auto Wheel = static_cast<FWheelBaseInterface*>(WheelNode.SimModule);
-							if (Wheel)
+						if (Wheel)
+						{
+							// FrictionOverride 默认 0：默认按命中面的物理材质取摩擦系数，
+							// 大于 0 时以固定值覆盖路面摩擦（调试对比用）
+							if (GSingularisMorphVehicleDebugParams.FrictionOverride > 0)
+								Wheel->SetSurfaceFriction(GSingularisMorphVehicleDebugParams.FrictionOverride);
+							else
 							{
-								if (GSingularisMorphVehicleDebugParams.FrictionOverride > 0)
-									Wheel->SetSurfaceFriction(GSingularisMorphVehicleDebugParams.FrictionOverride);
-								else
+								if (HitResult.Shape && HitResult.Actor && HitResult.Actor->PhysicsProxy() &&
+									HitResult.FaceIndex >= 0)
 								{
-									if (HitResult.Shape && HitResult.Actor && HitResult.Actor->PhysicsProxy() &&
-										HitResult.FaceIndex >= 0)
-									{
-										if (const FPhysicsMaterial* Material =
-											GetMaterialFromInternalFaceIndex_InternalHelper(
-												*HitResult.Shape,
-												*HitResult.Actor,
-												HitResult.FaceIndex
-											))
-											Wheel->SetSurfaceFriction(Material->Friction);
-									}
+									if (const FPhysicsMaterial* Material =
+										GetMaterialFromInternalFaceIndex_InternalHelper(
+											*HitResult.Shape,
+											*HitResult.Actor,
+											HitResult.FaceIndex
+										))
+										Wheel->SetSurfaceFriction(Material->Friction);
 								}
+							}
 
 
-								IPhysicsProxyBase* HitProxy = nullptr;
-								if (InWorld)
+							IPhysicsProxyBase* HitProxy = nullptr;
+							if (InWorld)
+							{
+								HitProxy = FPhysicsObjectInterface::GetProxy({&ActualHitObjectHandle, 1});
+
+								if (HitProxy && HitProxy->GetType() == EPhysicsProxyType::SingleParticleProxy)
 								{
-									HitProxy = FPhysicsObjectInterface::GetProxy({&ActualHitObjectHandle, 1});
-
-									if (HitProxy && HitProxy->GetType() == EPhysicsProxyType::SingleParticleProxy)
+									if (auto ParticleProxy = static_cast<FSingleParticlePhysicsProxy*>(HitProxy))
 									{
-										if (auto ParticleProxy = static_cast<FSingleParticlePhysicsProxy*>(HitProxy))
-										{
-											FPBDRigidParticleHandle* GroundParticle = HitResult.Actor->
-												CastToRigidParticle();
-											Wheel->SetGroundInteraction(
-												GroundParticle,
-												HitResult.WorldPosition,
-												HitResult.WorldNormal
-											);
-										}
+										FPBDRigidParticleHandle* GroundParticle = HitResult.Actor->
+											CastToRigidParticle();
+										Wheel->SetGroundInteraction(
+											GroundParticle,
+											HitResult.WorldPosition,
+											HitResult.WorldNormal
+										);
 									}
 								}
 							}
@@ -743,34 +760,35 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 							);
 						}
 
-						if (Suspension->GetWheelSimTreeIndex() != ISimulationModuleBase::INVALID_IDX)
+						FWheelBaseInterface* DebugWheel = nullptr;
+						if (const int32 DebugWheelLinkIdx = Suspension->GetWheelSimTreeIndex();
+							ModuleArray.IsValidIndex(DebugWheelLinkIdx))
 						{
-							auto Wheel = static_cast<FWheelBaseInterface*>(ModuleArray[Suspension->
-								GetWheelSimTreeIndex()].SimModule);
-							if (Wheel)
+							DebugWheel = ModuleArray[DebugWheelLinkIdx].SimModule
+								             ? ModuleArray[DebugWheelLinkIdx].SimModule->Cast<FWheelBaseInterface>()
+								             : nullptr;
+						}
+
+						if (DebugWheel && GSingularisMorphVehicleDebugParams.ShowWheelData)
+						{
+							FString TextOut = FString::Format(TEXT("{0}"), {DebugWheel->GetForceIntoSurface()});
+							FColor Col = FColor::White;
+							if (InWorld)
 							{
-								if (GSingularisMorphVehicleDebugParams.ShowWheelData)
-								{
-									FString TextOut = FString::Format(TEXT("{0}"), {Wheel->GetForceIntoSurface()});
-									FColor Col = FColor::White;
-									if (InWorld)
-									{
-										if (InWorld->GetNetMode() == NM_Client)
-											Col = FColor::Blue;
-										else
-											Col = FColor::Red;
-									}
-									FDebugDrawQueue::GetInstance().DrawDebugString(
-										HitResult.WorldNormal + FVec3(0, 50, 50),
-										TextOut,
-										nullptr,
-										Col,
-										-1.f,
-										true,
-										1.0f
-									);
-								}
+								if (InWorld->GetNetMode() == NM_Client)
+									Col = FColor::Blue;
+								else
+									Col = FColor::Red;
 							}
+							FDebugDrawQueue::GetInstance().DrawDebugString(
+								HitResult.WorldNormal + FVec3(0, 50, 50),
+								TextOut,
+								nullptr,
+								Col,
+								-1.f,
+								true,
+								1.0f
+							);
 						}
 
 #endif

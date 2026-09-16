@@ -328,6 +328,36 @@ struct FSingularisMorphChaosSimModuleManagerAsyncOutput : Chaos::FSimCallbackOut
 };
 
 /**
+ * 模拟模块管理器异步输出记录。
+ *
+ * 存储两个最近的物理线程异步输出，支持游戏线程在帧间进行时间插值。
+ */
+struct FSingularisMorphSimModuleOutputRecord
+{
+	/** 消费一个异步输出（假定为新于之前消费的输出） */
+	SINGULARISMORPHVEHICLE_API void ConsumeOutput(
+		Chaos::TSimCallbackOutputHandle<FSingularisMorphChaosSimModuleManagerAsyncOutput>&& Output
+	);
+
+	SINGULARISMORPHVEHICLE_API const FSingularisMorphChaosSimModuleManagerAsyncOutput* GetPreviousOutput() const;
+	SINGULARISMORPHVEHICLE_API FSingularisMorphChaosSimModuleManagerAsyncOutput* GetPreviousOutput();
+
+	SINGULARISMORPHVEHICLE_API const FSingularisMorphChaosSimModuleManagerAsyncOutput* GetNextOutput() const;
+	SINGULARISMORPHVEHICLE_API FSingularisMorphChaosSimModuleManagerAsyncOutput* GetNextOutput();
+
+	SINGULARISMORPHVEHICLE_API double GetLatestOutputStartTime() const;
+	SINGULARISMORPHVEHICLE_API double GetInterpolationFactor(double AtInternalTime) const;
+
+	/** 清理并释放所有存储的输出 */
+	SINGULARISMORPHVEHICLE_API void Clear();
+
+private:
+	Chaos::TSimCallbackOutputHandle<FSingularisMorphChaosSimModuleManagerAsyncOutput> CachedOutput_0;
+	Chaos::TSimCallbackOutputHandle<FSingularisMorphChaosSimModuleManagerAsyncOutput> CachedOutput_1;
+	bool bPreviousOutputIs0 = true;
+};
+
+/**
  * 引力奇点变型模拟模块管理器异步回调。
  *
  * 这是整个载具模拟系统在物理线程侧的入口枢纽，继承自 Chaos::TSimCallbackObject，

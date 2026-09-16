@@ -17,7 +17,6 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSocket
 {
 	GENERATED_USTRUCT_BODY()
 
-	FSingularisMorphVehicleSocket();
 
 	/** Socket 唯一名称 */
 	UPROPERTY(

@@ -1,8 +1,11 @@
 #include "SingularisMorphVehicle.h"
 
-#include <PhysicsPublic.h>
+#include <Engine/Canvas.h>
+#include <Engine/World.h>
+#include <GameFramework/HUD.h>
 
-#include "Core/SingularisMorphVehicleSimModuleManager.h"
+#include "Components/SingularisMorphVehicleSimulationComponent.h"
+#include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogSingularisMorphVehicle);
 
@@ -13,45 +16,46 @@ void FSingularisMorphVehicleModule::StartupModule()
 	// 1) 验证配置文件可用
 	check(GConfig);
 
-	// 2) 注册物理场景初始化与终止回调
-	OnPhysSceneInitHandle = FPhysicsDelegates::OnPhysSceneInit.AddRaw(
-		this,
-		&FSingularisMorphVehicleModule::PhysSceneInit
-	);
-	OnPhysSceneTermHandle = FPhysicsDelegates::OnPhysSceneTerm.AddRaw(
-		this,
-		&FSingularisMorphVehicleModule::PhysSceneTerm
+	// 2) 注册 HUD 调试显示回调
+	OnShowDebugInfoHandle = AHUD::OnShowDebugInfo.AddStatic(
+		&FSingularisMorphVehicleModule::OnShowDebugInfo
 	);
 }
 
 void FSingularisMorphVehicleModule::ShutdownModule()
 {
-	FPhysicsDelegates::OnPhysSceneInit.Remove(OnPhysSceneInitHandle);
-	FPhysicsDelegates::OnPhysSceneTerm.Remove(OnPhysSceneTermHandle);
+	AHUD::OnShowDebugInfo.Remove(OnShowDebugInfoHandle);
 }
 
-// ReSharper disable CppMemberFunctionMayBeStatic
-
-void FSingularisMorphVehicleModule::PhysSceneInit(FPhysScene* PhysScene)
+void FSingularisMorphVehicleModule::OnShowDebugInfo(
+	AHUD* HUD,
+	UCanvas* Canvas,
+	const FDebugDisplayInfo& DisplayInfo,
+	float& YL,
+	float& YPos
+)
 {
-	new FSingularisMorphVehicleSimModuleManager(PhysScene);
-}
+	// 1) 守卫：仅响应 showdebug SingularisMorphVehicle
+	static const FName NAME_SingularisMorphVehicle("SingularisMorphVehicle");
+	if (!HUD || !Canvas || !HUD->ShouldDisplayDebug(NAME_SingularisMorphVehicle)) return;
 
-void FSingularisMorphVehicleModule::PhysSceneTerm(FPhysScene* PhysScene)
-{
-	// 1) 获取物理场景关联的仿真模块管理器
-	FSingularisMorphVehicleSimModuleManager* VehicleManager =
-		FSingularisMorphVehicleSimModuleManager::GetManagerFromScene(PhysScene);
-	if (VehicleManager != nullptr)
+	// 2) 定位当前 World 的调度器子系统
+	UWorld* World = HUD->GetWorld();
+	if (!IsValid(World)) return;
+
+	USingularisMorphVehicleSchedulerSubsystem* Subsystem =
+		World->GetSubsystem<USingularisMorphVehicleSchedulerSubsystem>();
+	if (!IsValid(Subsystem)) return;
+
+	// 3) 逐个载具输出调试信息
+	for (const TWeakObjectPtr<USingularisMorphVehicleSimulationComponent>& Vehicle :
+	     Subsystem->GetVehicleSimulationComponents())
 	{
-		// 2) 解除绑定并销毁管理器
-		VehicleManager->DetachFromPhysScene(PhysScene);
-		delete VehicleManager;
-		VehicleManager = nullptr;
+		const TStrongObjectPtr<USingularisMorphVehicleSimulationComponent> StrongPtr = Vehicle.Pin();
+		if (StrongPtr.IsValid())
+			StrongPtr->ShowDebugInfo(HUD, Canvas, DisplayInfo, YL, YPos);
 	}
 }
-
-// ReSharper restore CppMemberFunctionMayBeStatic
 
 #undef LOCTEXT_NAMESPACE
 

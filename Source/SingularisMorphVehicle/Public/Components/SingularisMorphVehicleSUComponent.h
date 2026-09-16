@@ -58,7 +58,7 @@ public:
 	)
 	FVector AnimationOffset = FVector::ZeroVector;
 
-	/** 叠加在代理组件变换之上的额外偏移量（有代理组件时为增量偏移，无代理组件时作为绝对变换） */
+	/** 叠加在代理组件变换之上的增量偏移；代理组件缺失时叠加在 Actor 根组件变换上 */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,

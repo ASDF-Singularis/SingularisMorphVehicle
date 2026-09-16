@@ -29,6 +29,10 @@ void USingularisMorphVehicleClusterUnionAdapter::Initialize(const FSingularisMor
 	);
 
 	bEventsBound = true;
+
+	// 事件只在集群组成变化时触发；若子件在 Initialize 之前就已加入集群，事件已经错过。
+	// 此处置一次初始脏标记，保证首帧必然拉取一次快照完成首次装配
+	bDirty = true;
 }
 
 void USingularisMorphVehicleClusterUnionAdapter::Terminate()
@@ -45,9 +49,10 @@ void USingularisMorphVehicleClusterUnionAdapter::Terminate()
 
 bool USingularisMorphVehicleClusterUnionAdapter::IsReady() const
 {
-	if (!ClusterUnionComponent.IsValid()) return false;
-	const Chaos::FClusterUnionPhysicsProxy* Proxy = ClusterUnionComponent->GetPhysicsProxyPublic();
-	return Proxy && !Proxy->GetSyncedData_External().ChildParticles.IsEmpty();
+	// 就绪意味着物理后端可用，而非当前存在子件：
+	// 子件集合为空时仍须由 ConsumeSnapshot 产出空快照，供消费端清除模块（载具解体），
+	// 否则全部子件脱离集群后旧模块会永久残留
+	return ClusterUnionComponent.IsValid() && ClusterUnionComponent->GetPhysicsProxyPublic() != nullptr;
 }
 
 bool USingularisMorphVehicleClusterUnionAdapter::IsDirty() const
@@ -76,7 +81,11 @@ FTransform USingularisMorphVehicleClusterUnionAdapter::GetReferenceTransform() c
 
 FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnionAdapter::ConsumeSnapshot()
 {
-	// 1) 集群联合组件有效性检查
+	// 1) 消费即清除脏标记：无论能否构建出实体，本次变更已处理完毕。
+	//    子件集合为空时返回空快照，由消费端清除全部模块（载具解体）
+	bDirty = false;
+
+	// 2) 集群联合组件与物理代理有效性检查
 	if (!ClusterUnionComponent.IsValid()) return {};
 
 	const Chaos::FClusterUnionPhysicsProxy* Proxy = ClusterUnionComponent->GetPhysicsProxyPublic();
@@ -85,13 +94,13 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 	const auto& ChildParticles = Proxy->GetSyncedData_External().ChildParticles;
 	if (ChildParticles.IsEmpty()) return {};
 
-	// 2) 获取物理场景，用于粒子代理反查所属组件
+	// 3) 获取物理场景，用于粒子代理反查所属组件
 	const UWorld* World = GetWorld();
 	if (!World) return {};
 	const FPhysScene* PhysScene = World->GetPhysicsScene();
 	if (!PhysScene) return {};
 
-	// 3) 遍历集群子粒子，通过粒子代理反查所属物理组件后构建完整快照。
+	// 4) 遍历集群子粒子，通过粒子代理反查所属物理组件后构建完整快照。
 	//    实体只描述物理信息（组件 + 粒子数据），SU 组件的查询由消费端
 	//    （SimulationComponent）通过 MappingSubsystem 统一完成。
 	//    不能按数组下标与场景子组件（GetChildrenComponents）配对：
@@ -118,9 +127,6 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 		Snapshot.Entities.Emplace(MoveTemp(Entity));
 	}
 
-	// 4) 清除脏标记
-	bDirty = false;
-
 	return Snapshot;
 }
 
@@ -138,15 +144,20 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentAdded(
 	bool bIsNew
 )
 {
+	// 仅处理新加入集群的组件：引擎在物理重同步时会重复上报同一批子件，
+	// 它们并非拓扑变更，若一概置脏会在每帧触发全量重建
 	if (!bIsNew || !IsValid(Component)) return;
 
 	bDirty = true;
 
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Log,
-		TEXT("[ClusterUnionAdapter] OnClusterComponentAdded: Component=%s"),
-		*GetNameSafe(Component)
+		Verbose,
+		TEXT("[ClusterUnionAdapter] OnClusterComponentAdded: Component=%s, IsNew=%d, Bones=%d, RemovedBones=%d"),
+		*GetNameSafe(Component),
+		bIsNew ? 1 : 0,
+		BonesData.Num(),
+		RemovedBoneIDs.Num()
 	);
 }
 
@@ -161,7 +172,7 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentRemoved(
 
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Log,
+		Verbose,
 		TEXT("[ClusterUnionAdapter] OnClusterComponentRemoved: Component=%s"),
 		*GetNameSafe(Component)
 	);

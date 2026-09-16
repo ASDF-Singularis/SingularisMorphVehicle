@@ -1,9 +1,13 @@
 #pragma once
 
-#include <PhysicsInterfaceDeclaresCore.h>
+#include <CoreMinimal.h>
 #include <Modules/ModuleManager.h>
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSingularisMorphVehicle, Log, All);
+
+class AHUD;
+class UCanvas;
+class FDebugDisplayInfo;
 
 class FSingularisMorphVehicleModule : public IModuleInterface
 {
@@ -12,9 +16,14 @@ public:
 	virtual void ShutdownModule() override;
 
 private:
-	void PhysSceneInit(FPhysScene* PhysScene);
-	void PhysSceneTerm(FPhysScene* PhysScene);
+	/** HUD 调试显示入口（showdebug SingularisMorphVehicle） */
+	static void OnShowDebugInfo(
+		AHUD* HUD,
+		UCanvas* Canvas,
+		const FDebugDisplayInfo& DisplayInfo,
+		float& YL,
+		float& YPos
+	);
 
-	FDelegateHandle OnPhysSceneInitHandle;
-	FDelegateHandle OnPhysSceneTermHandle;
+	FDelegateHandle OnShowDebugInfoHandle;
 };

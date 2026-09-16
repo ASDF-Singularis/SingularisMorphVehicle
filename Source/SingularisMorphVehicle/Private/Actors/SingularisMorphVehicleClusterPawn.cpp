@@ -1,8 +1,5 @@
 #include "Actors/SingularisMorphVehicleClusterPawn.h"
 
-#include <Components/SkeletalMeshComponent.h>
-#include <Components/StaticMeshComponent.h>
-
 #include "Components/SingularisMorphVehicleClusterUnionComponent.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Objects/SingularisMorphVehicleClusterUnionAdapter.h"
@@ -48,36 +45,9 @@ void ASingularisMorphVehicleClusterPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 1) 仅服务器执行集群组件收集
-	if (!HasAuthority()) return;
-
-	// 2) 遍历 SceneComponent 层级，将几何体/静态网格/骨骼网格组件添加到集群联合
-	TArray<USceneComponent*> ChildComponents;
-	GetRootComponent()->GetChildrenComponents(true, ChildComponents);
-
-	for (USceneComponent* Component : ChildComponents)
-	{
-		if (auto* Primitive = Cast<UPrimitiveComponent>(Component))
-		{
-			TArray<int32> BoneIds;
-
-			if (const auto* SKMComp = Cast<USkeletalMeshComponent>(Primitive))
-			{
-				for (auto I = 0; I < SKMComp->Bodies.Num(); I++)
-					BoneIds.Add(I);
-			}
-			else if (Cast<UStaticMeshComponent>(Primitive) && Primitive->HasValidPhysicsState())
-				BoneIds.Add(0);
-			else
-			{
-				// 几何体集组件及其他类型：添加单个骨骼
-				BoneIds.Add(0);
-			}
-
-			if (BoneIds.Num() > 0)
-				VehicleClusterUnionComponent->AddComponentToCluster(Primitive, BoneIds);
-		}
-	}
+	// 集群子件组装由集群联合组件统一完成（仅权威端生效）
+	if (VehicleClusterUnionComponent)
+		VehicleClusterUnionComponent->AddOwnedComponentsToCluster();
 }
 
 void ASingularisMorphVehicleClusterPawn::Tick(const float DeltaTime)

@@ -5,7 +5,6 @@
 #include <Physics/Experimental/PhysScene_Chaos.h>
 #include <Subsystems/WorldSubsystem.h>
 
-#include "Core/SingularisMorphVehicleSimModuleManager.h"
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
 #include "SingularisMorphVehicleSchedulerSubsystem.generated.h"
 
@@ -36,23 +35,10 @@ class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSchedulerSubsystem : pub
 #pragma region Internal Variable
 
 	/**
-	 * 全局一次性初始化标记。
-	 * 构造函数中通过此标记确保全局副作用（如静态注册）只执行一次，
-	 * 而非每次创建子系统实例时重复执行。
-	 */
-	bool bGInitialized = false;
-
-	/**
 	 * 单调递增的帧序号计数器。
 	 * 每帧在 InjectInputs() 中递增，注入到 AsyncInput 供物理线程判断输入是否过期。
 	 */
 	int32 Timestamp = 0;
-
-	/**
-	 * 当前帧内已完成的物理子步计数。
-	 * 由 OnPhysScenePreTick 归零，供载具组件在子步插值中参考。
-	 */
-	int32 SubStepCount = 0;
 
 	/** 已注册的载具模拟组件列表（弱指针，不阻止 GC 回收）。 */
 	TArray<TWeakObjectPtr<USingularisMorphVehicleSimulationComponent>> VehicleSimulationComponents{};
@@ -73,8 +59,6 @@ class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSchedulerSubsystem : pub
 	 */
 	FSingularisMorphSimModuleManagerAsyncCallback* AsyncCallback = nullptr;
 
-	FDelegateHandle OnPostWorldInitializationHandle{};
-	FDelegateHandle OnWorldCleanupHandle{};
 
 	/** 网络驱动创建回调句柄，用于注册 NetTokenStore。 */
 	FDelegateHandle OnNetDriverCreatedHandle{};
@@ -127,16 +111,20 @@ public:
 	)
 	void UnregisterVehicleComponent(USingularisMorphVehicleSimulationComponent* Vehicle);
 
+	/**
+	 * 获取已注册的载具模拟组件列表（弱引用）。
+	 *
+	 * 供调试显示等外部只读遍历使用；消费端必须逐个 Pin 校验有效性。
+	 */
+	const TArray<TWeakObjectPtr<USingularisMorphVehicleSimulationComponent>>& GetVehicleSimulationComponents() const
+	{
+		return VehicleSimulationComponents;
+	}
+
 #pragma endregion
 
 private:
 #pragma region Callback
-
-	/** World 初始化完成回调（当前未被使用，生命周期由 PostInitialize 替代）。 */
-	void OnPostWorldInitialization(UWorld* World, FWorldInitializationValues WorldInitializationValues);
-
-	/** World 清理回调（当前未被使用，生命周期由 Deinitialize 替代）。 */
-	void OnWorldCleanup(UWorld* World, bool bArg, bool bCond);
 
 	/**
 	 * 网络驱动创建回调。

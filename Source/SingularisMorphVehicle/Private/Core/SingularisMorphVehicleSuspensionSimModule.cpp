@@ -1,6 +1,7 @@
 #include "Core/SingularisMorphVehicleSuspensionSimModule.h"
 
 #include "PBDRigidsSolver.h"
+#include "SingularisMorphVehicle.h"
 #include "VehicleUtility.h"
 #include "Chaos/PBDSuspensionConstraints.h"
 #include "Physics/PhysicsInterfaceCore.h"
@@ -172,6 +173,8 @@ void FSingularisMorphVehicleSuspensionSimModule::UpdateConstraint()
 			if (FSuspensionConstraintPhysicsProxy* Proxy = Constraint->GetProxy<FSuspensionConstraintPhysicsProxy>())
 			{
 				FPhysicsSolver* Solver = Proxy->GetSolver<FPhysicsSolver>();
+				if (!Solver) return;
+
 				const FVector& CurrentTargetPosition = GetTargetPosition();
 				const FVector& CurrentImpactNormal = GetImpactNormal();
 				const IPhysicsProxyBase* GroundProxy = GetHitProxy();
@@ -192,27 +195,42 @@ void FSingularisMorphVehicleSuspensionSimModule::CreateConstraint(const FPhysics
 {
 	EnsureIsInGameThreadContext();
 
+	// 幂等：已持有约束时不重建，否则重复构建会让旧约束失去句柄而永久残留
+	if (ConstraintHandle.IsValid()) return;
+
 	const FVector& LocalOffset = GetInitialParticleTransform().GetLocation();
 
 	if (auto Scene = FPhysicsObjectExternalInterface::GetScene({&PhysicsObject, 1}))
 	{
 		FLockedWritePhysicsObjectExternalInterface Interface = FPhysicsObjectExternalInterface::LockWrite(Scene);
-		if (const FGeometryParticle* Particle = Interface->GetParticle(PhysicsObject))
+		if (Interface->GetParticle(PhysicsObject) != nullptr)
 		{
 			ConstraintHandle = FPhysicsInterface::CreateSuspension(PhysicsObject, LocalOffset);
 
-			if (ConstraintHandle.IsValid())
+			// 约束创建失败时悬挂退回纯力模拟（无硬限位、无地面法向修正），
+			// 表现为车轮下坠与抓地异常，必须在日志中可见
+			if (!ConstraintHandle.IsValid())
 			{
-				if (auto Constraint = static_cast<FSuspensionConstraint*>(ConstraintHandle.Constraint))
-				{
-					Constraint->SetHardstopStiffness(1.0f);
-					Constraint->SetSpringStiffness(Setup().SpringRate * 0.25f);
-					Constraint->SetSpringPreload(Setup().SpringPreload);
-					Constraint->SetSpringDamping(Setup().SpringDamping * 5.0f);
-					Constraint->SetMinLength(-Setup().MaxRaise);
-					Constraint->SetMaxLength(Setup().MaxDrop);
-					Constraint->SetAxis(-Setup().SuspensionAxis);
-				}
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Warning,
+					TEXT(
+						"Suspension[GUID=%d]: failed to create suspension constraint - falling back to force-only simulation"
+					),
+					GetGuid()
+				);
+				return;
+			}
+
+			if (auto Constraint = static_cast<FSuspensionConstraint*>(ConstraintHandle.Constraint))
+			{
+				Constraint->SetHardstopStiffness(1.0f);
+				Constraint->SetSpringStiffness(Setup().SpringRate * 0.25f);
+				Constraint->SetSpringPreload(Setup().SpringPreload);
+				Constraint->SetSpringDamping(Setup().SpringDamping * 5.0f);
+				Constraint->SetMinLength(-Setup().MaxRaise);
+				Constraint->SetMaxLength(Setup().MaxDrop);
+				Constraint->SetAxis(-Setup().SuspensionAxis);
 			}
 		}
 	}
@@ -221,13 +239,21 @@ void FSingularisMorphVehicleSuspensionSimModule::CreateConstraint(const FPhysics
 void FSingularisMorphVehicleSuspensionSimModule::DestroyConstraint()
 {
 	EnsureIsInGameThreadContext();
+
+	// 幂等：约束从未创建或已释放时句柄无效，对无效句柄下命令会命中未初始化内存
+	if (!ConstraintHandle.IsValid()) return;
+
+	// 释放后立即失效句柄，避免重复终止回调对同一约束二次释放。
+	// ReleaseConstraint 要求非 const 句柄，故直接作用于成员
 	FPhysicsCommand::ExecuteWrite(
 		ConstraintHandle,
-		[&](const FPhysicsConstraintHandle& Constraint)
+		[this](const FPhysicsConstraintHandle&)
 		{
 			FPhysicsInterface::ReleaseConstraint(ConstraintHandle);
 		}
 	);
+
+	ConstraintHandle = FPhysicsConstraintHandle();
 }
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)

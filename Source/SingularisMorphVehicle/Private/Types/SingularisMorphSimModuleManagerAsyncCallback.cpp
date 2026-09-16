@@ -162,9 +162,11 @@ bool FNetworkSingularisMorphVehicleInputs::NetSerialize(FArchive& Ar, class UPac
 				InputValues[I].DeltaNetSerialize(Ar, Map, bOutSuccess, PreviousInputValues[I], InputQuantizationType);
 			else
 			{
-				bOutSuccess = false;
-				//Fail case.
+				// 数量不一致：与自身做一次无增量序列化以消费掉位流，保持归档对齐。
+				// 该调用会把 bOutSuccess 置回 true，必须在之后恢复失败标记，
+				// 否则接收端会把默认值与真实输入混在一起而不上报失败
 				InputValues[I].DeltaNetSerialize(Ar, Map, bOutSuccess, InputValues[I], InputQuantizationType);
+				bOutSuccess = false;
 			}
 		}
 	}
@@ -216,10 +218,26 @@ void FNetworkSingularisMorphVehicleStateNetTokenData::Init(const Chaos::FModuleN
 	ModuleShouldSerialize.Reset(ModuleData.Num());
 	for (auto Idx = 0; Idx < ModuleData.Num(); Idx++)
 	{
-		uint32 Hash = Chaos::FModuleFactoryRegister::GetModuleHash(ModuleData[Idx]->GetSimType());
-		Hashes.Add(Hash);
-		Indexes.Add(ModuleData[Idx]->SimArrayIndex);
-		ModuleShouldSerialize.Add(!ModuleData[Idx]->IsDefaultState());
+		// 空槽出现在工厂缺失时的反序列化路径。此处仍占位：令牌的哈希/索引数组与 ModuleData
+		// 必须保持相同下标，否则后续所有模块的类型哈希与树索引会整体错位
+		Chaos::FModuleNetData* Element = ModuleData[Idx].Get();
+		if (!Element)
+		{
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Error,
+				TEXT("[NetTokenInit] Module slot %d has no net data object - the factory for its type is missing"),
+				Idx
+			);
+			Hashes.Add(0);
+			Indexes.Add(Chaos::ISimulationModuleBase::INVALID_IDX);
+			ModuleShouldSerialize.Add(false);
+			continue;
+		}
+
+		Hashes.Add(Chaos::FModuleFactoryRegister::GetModuleHash(Element->GetSimType()));
+		Indexes.Add(Element->SimArrayIndex);
+		ModuleShouldSerialize.Add(!Element->IsDefaultState());
 	}
 }
 
@@ -231,18 +249,26 @@ void FNetworkSingularisMorphVehicleStates::ApplyData(UActorComponent* NetworkCom
 	))
 	{
 		if (FSingularisMorphVehicleSimulation* VehicleSimulation = ModularBaseComponent->VehicleSimulationPT.Get())
-			VehicleSimulation->AccessSimComponentTree()->SetSimState(ModuleData);
+		{
+			// 模拟树在 Terminate 之后、Initialize 之前为空，重演落帧时可能命中该窗口
+			if (TUniquePtr<Chaos::FSimModuleTree>& SimTree = VehicleSimulation->AccessSimComponentTree();
+				SimTree.IsValid())
+				SimTree->SetSimState(ModuleData);
+		}
 	}
 }
 
 void FNetworkSingularisMorphVehicleStates::BuildData(const UActorComponent* NetworkComponent)
 {
-	if (NetworkComponent)
-	{
-		if (const FSingularisMorphVehicleSimulation* VehicleSimulation = Cast<const
-			USingularisMorphVehicleSimulationComponent>(NetworkComponent)->VehicleSimulationPT.Get())
-			VehicleSimulation->GetSimComponentTree()->SetNetState(ModuleData);
-	}
+	if (!NetworkComponent) return;
+
+	// 该状态数据可能被挂到非载具组件上，Cast 失败时不得解引用
+	const USingularisMorphVehicleSimulationComponent* ModularBaseComponent = Cast<
+		USingularisMorphVehicleSimulationComponent>(NetworkComponent);
+	if (!ModularBaseComponent) return;
+
+	if (const FSingularisMorphVehicleSimulation* VehicleSimulation = ModularBaseComponent->VehicleSimulationPT.Get())
+		VehicleSimulation->GetSimComponentTree()->SetNetState(ModuleData);
 }
 
 bool FNetworkSingularisMorphVehicleStates::NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -295,31 +321,50 @@ bool FNetworkSingularisMorphVehicleStates::NetSerialize(FArchive& Ar, class UPac
 				else
 					ModuleData[I]->ApplyDefaultState();
 			}
+			else
+			{
+				// 工厂缺失：既无法构建数据对象，也无法消费其位流，继续读取会让归档错位，
+				// 因此整包判失败并由网络层丢弃，而不是留下空槽
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Error,
+					TEXT("[NetSerialize] No net data factory for module type hash %u (tree index %d) - rejecting packet"
+					),
+					ModuleTypeHash,
+					SimArrayIndex
+				);
+				bOutSuccess = false;
+				return false;
+			}
 		}
 	}
 	else
 	{
-		// Only mark modules for serialization if they are not in their default state
+		// 空槽不置位，也不写入模块数据，但类型哈希与树索引仍按位写出以保持位流对齐
 		for (uint32 I = 0; I < NumNetModules; I++)
 		{
-			if (ModuleData[I]->IsDefaultState() == false)
+			if (ModuleData[I] && ModuleData[I]->IsDefaultState() == false)
 				ModulesBitArray.SetBit(I);
 		}
 		Ar.SerializeBits(ModulesBitArray.GetData(), NumNetModules);
 
 		for (uint32 I = 0; I < NumNetModules; I++)
 		{
-			uint32 ModuleTypeHash = Chaos::FModuleFactoryRegister::GetModuleHash(ModuleData[I]->GetSimType());
+			Chaos::FModuleNetData* Element = ModuleData[I].Get();
+			uint32 ModuleTypeHash = Element
+				                        ? Chaos::FModuleFactoryRegister::GetModuleHash(Element->GetSimType())
+				                        : 0;
 
-			check(ModuleData[I]->SimArrayIndex + 1 >= 0);
-			auto SimArrayIndexUnsigned = static_cast<uint32>(ModuleData[I]->SimArrayIndex + 1);
-			// Convert to unsigned and align default -1 to 0. Done to be able to use SerializeIntPacked() for network optimization. 
+			const int32 ModuleArrayIndex = Element ? Element->SimArrayIndex : Chaos::ISimulationModuleBase::INVALID_IDX;
+			check(ModuleArrayIndex + 1 >= 0);
+			auto SimArrayIndexUnsigned = static_cast<uint32>(ModuleArrayIndex + 1);
+			// Convert to unsigned and align default -1 to 0. Done to be able to use SerializeIntPacked() for network optimization.
 
 			Ar << ModuleTypeHash;
 			Ar.SerializeIntPacked(SimArrayIndexUnsigned);
 
 			const bool bShouldSerializeData = ModulesBitArray.IsBitSet(I);
-			if (bShouldSerializeData)
+			if (Element && bShouldSerializeData)
 				ModuleData[I]->Serialize(Ar);
 		}
 	}
@@ -367,7 +412,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 	auto GetDeltaDataHelper = [&](int32 InIdx, uint32 InModuleTypeHash, int32 InSimArrayIndex)
 	{
 		TSharedPtr<Chaos::FModuleNetData> DeltaData = nullptr;
-		if (DeltaSource->ModuleData.IsValidIndex(InIdx))
+		if (DeltaSource->ModuleData.IsValidIndex(InIdx) && DeltaSource->ModuleData[InIdx])
 		{
 			const uint32 DeltaModuleHash = Chaos::FModuleFactoryRegister::GetModuleHash(
 				DeltaSource->ModuleData[InIdx]->GetSimType()
@@ -461,6 +506,21 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 					Ar.IsError()
 				);
 			}
+			else
+			{
+				// 工厂缺失：无法构建数据对象也无法消费其位流，继续读取会让归档错位，整包判失败
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Error,
+					TEXT(
+						"[DeltaNetSerialize] No net data factory for module type hash %u (tree index %d) - rejecting packet"
+					),
+					ModuleTypeHash,
+					SimArrayIndex
+				);
+				bOutSuccess = false;
+				return false;
+			}
 		}
 	}
 	else
@@ -488,9 +548,10 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 				"==DeltaNetSerialize SAVING. ModuleData: %d STA. Bit: %lld - %ls",
 				I,
 				Ar.IsSaving()?BitWriter->GetNumBits():BitReader->GetPosBits(),
-				*ModuleData[I]->GetSimType().ToString()
+				ModuleData[I] ? *ModuleData[I]->GetSimType().ToString() : TEXT("<no net data>")
 			);
-			if (VehicleStateData.ModuleShouldSerialize[I])
+			const bool bShouldSerializeData = VehicleStateData.ModuleShouldSerialize[I];
+			if (ModuleData[I] && bShouldSerializeData)
 			{
 				const int32 SimArrayIndex = VehicleStateData.Indexes[I];
 				const uint32 ModuleTypeHash = VehicleStateData.Hashes[I];
@@ -506,7 +567,7 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 				I,
 				Ar.IsSaving()?BitWriter->GetNumBits():BitReader->GetPosBits(),
 				EndBit-StartBit,
-				*ModuleData[I]->GetSimType().ToString()
+				ModuleData[I] ? *ModuleData[I]->GetSimType().ToString() : TEXT("<no net data>")
 			);
 		}
 	}
@@ -535,6 +596,9 @@ void FNetworkSingularisMorphVehicleStates::InterpolateData(
 	}
 	for (auto I = 0; I < ModuleData.Num(); I++)
 	{
+		// 任一侧为空槽（工厂缺失）时跳过该下标：无法判定类型一致性，也无对象可插值
+		if (!ModuleData[I] || !MinState.ModuleData[I] || !MaxState.ModuleData[I]) continue;
+
 		// if these don't match then something has gone terribly wrong
 		check(ModuleData[I]->GetSimType() == MinState.ModuleData[I]->GetSimType());
 		check(ModuleData[I]->GetSimType() == MaxState.ModuleData[I]->GetSimType());
@@ -664,6 +728,91 @@ void FSingularisMorphVehicleAsyncInput::ProcessInputs()
 		VehicleSim->VehicleInputs = PhysicsInputs.NetworkInputs.VehicleInputs;
 	else
 		PhysicsInputs.NetworkInputs.VehicleInputs = VehicleSim->VehicleInputs;
+}
+
+/**
+ * 优先填充空槽位；双槽位就绪后按交替策略覆盖旧输出。
+ */
+void FSingularisMorphSimModuleOutputRecord::ConsumeOutput(
+	Chaos::TSimCallbackOutputHandle<FSingularisMorphChaosSimModuleManagerAsyncOutput>&& Output
+)
+{
+	if (!CachedOutput_0)
+		CachedOutput_0 = MoveTemp(Output);
+	else if (!CachedOutput_1)
+		CachedOutput_1 = MoveTemp(Output);
+	else
+	{
+		(bPreviousOutputIs0 ? CachedOutput_0 : CachedOutput_1) = MoveTemp(Output);
+		bPreviousOutputIs0 = !bPreviousOutputIs0;
+	}
+}
+
+const FSingularisMorphChaosSimModuleManagerAsyncOutput* FSingularisMorphSimModuleOutputRecord::GetPreviousOutput() const
+{
+	if (CachedOutput_0 && bPreviousOutputIs0)
+		return CachedOutput_0.Get();
+	if (CachedOutput_1 && !bPreviousOutputIs0)
+		return CachedOutput_1.Get();
+	return nullptr;
+}
+
+FSingularisMorphChaosSimModuleManagerAsyncOutput* FSingularisMorphSimModuleOutputRecord::GetPreviousOutput()
+{
+	if (CachedOutput_0 && bPreviousOutputIs0)
+		return CachedOutput_0.Get();
+	if (CachedOutput_1 && !bPreviousOutputIs0)
+		return CachedOutput_1.Get();
+	return nullptr;
+}
+
+const FSingularisMorphChaosSimModuleManagerAsyncOutput* FSingularisMorphSimModuleOutputRecord::GetNextOutput() const
+{
+	if (CachedOutput_1 && bPreviousOutputIs0)
+		return CachedOutput_1.Get();
+	if (CachedOutput_0 && !bPreviousOutputIs0)
+		return CachedOutput_0.Get();
+	return nullptr;
+}
+
+FSingularisMorphChaosSimModuleManagerAsyncOutput* FSingularisMorphSimModuleOutputRecord::GetNextOutput()
+{
+	if (CachedOutput_1 && bPreviousOutputIs0)
+		return CachedOutput_1.Get();
+	if (CachedOutput_0 && !bPreviousOutputIs0)
+		return CachedOutput_0.Get();
+	return nullptr;
+}
+
+double FSingularisMorphSimModuleOutputRecord::GetLatestOutputStartTime() const
+{
+	double LatestOutputStartTime = -DBL_MAX;
+	if (CachedOutput_0 && CachedOutput_1)
+		LatestOutputStartTime = (bPreviousOutputIs0 ? CachedOutput_1 : CachedOutput_0)->InternalTime;
+	else if (CachedOutput_0)
+		LatestOutputStartTime = CachedOutput_0->InternalTime;
+	return LatestOutputStartTime;
+}
+
+double FSingularisMorphSimModuleOutputRecord::GetInterpolationFactor(double AtInternalTime) const
+{
+	const FSingularisMorphChaosSimModuleManagerAsyncOutput* PreviousOutput = GetPreviousOutput();
+	const FSingularisMorphChaosSimModuleManagerAsyncOutput* NextOutput = GetNextOutput();
+	double Alpha = 0.f;
+	if (NextOutput)
+	{
+		const double Denom = NextOutput->InternalTime - PreviousOutput->InternalTime;
+		if (Denom > SMALL_NUMBER)
+			Alpha = FMath::Clamp((AtInternalTime - PreviousOutput->InternalTime) / Denom, 0.0f, 1.0f);
+	}
+	return Alpha;
+}
+
+void FSingularisMorphSimModuleOutputRecord::Clear()
+{
+	CachedOutput_0 = Chaos::TSimCallbackOutputHandle<FSingularisMorphChaosSimModuleManagerAsyncOutput>();
+	CachedOutput_1 = Chaos::TSimCallbackOutputHandle<FSingularisMorphChaosSimModuleManagerAsyncOutput>();
+	bPreviousOutputIs0 = true;
 }
 
 /**

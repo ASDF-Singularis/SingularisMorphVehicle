@@ -26,6 +26,15 @@ void FAnimNode_SingularisMorphVehicleController::GatherDebugData(FNodeDebugData&
 	const TArray<FSingularisMorphModuleAnimationData>& AnimData = AnimInstanceProxy->GetModuleAnimData();
 	for (const FSingularisMorphModuleLookupData& Module : Modules)
 	{
+		// 模块集合变化后 Modules 可能先于 AnimData 刷新，越界时不输出该模块
+		if (!AnimData.IsValidIndex(Module.ModuleIndex))
+		{
+			DebugData.AddDebugItem(
+				FString::Printf(TEXT(" [Module Index : %d] (stale lookup data)"), Module.ModuleIndex)
+			);
+			continue;
+		}
+
 		if (Module.BoneReference.BoneIndex != INDEX_NONE)
 		{
 			DebugLine = FString::Printf(

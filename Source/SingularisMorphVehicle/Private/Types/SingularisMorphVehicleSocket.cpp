@@ -4,13 +4,6 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleSocket)
 
-FSingularisMorphVehicleSocket::FSingularisMorphVehicleSocket()
-{
-	// 1) 初始化位置与旋转偏移为零
-	RelativeLocation = FVector::ZeroVector;
-	RelativeRotation = FRotator::ZeroRotator;
-}
-
 FVector FSingularisMorphVehicleSocket::GetLocation(
 	const class USingularisMorphVehicleClusterUnionComponent* Component
 ) const

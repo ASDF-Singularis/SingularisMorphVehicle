@@ -57,6 +57,15 @@ public:
 #pragma region API
 
 	/**
+	 * 将 Owner 场景层级中的物理组件加入集群。
+	 *
+	 * 仅权威端生效：集群子件集合由服务器组装，其它端由集群复制事件同步。
+	 * 静态网格体/几何体集以首个体加入，骨骼网格体按物理体逐个加入，
+	 * 供按骨骼挂载的模拟模块通过粒子索引定位自身子件。
+	 */
+	void AddOwnedComponentsToCluster();
+
+	/**
 	 * 获取物理代理的公共访问入口。
 	 * UE 5.8 将 GetPhysicsProxy 改为 protected，此处提供公共桥梁。
 	 */
@@ -68,6 +77,14 @@ public:
 	 * UE 5.8 将 IsAuthority 改为 protected，此处提供公共桥梁。
 	 */
 	bool IsAuthorityPublic() const { return IsAuthority(); }
+
+#pragma endregion
+
+private:
+#pragma region Internal Function
+
+	/** 按组件类型将单个场景组件加入集群 */
+	void AddComponentToClusterByType(USceneComponent* Component);
 
 #pragma endregion
 };

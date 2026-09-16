@@ -33,17 +33,24 @@ Chaos::ISimulationModuleBase* USingularisWheelSUComponent::CreateNewCoreModule()
 	Settings.Radius = WheelRadius;
 	Settings.Width = WheelWidth;
 	Settings.WheelInertia = WheelInertia;
+	Settings.MaxRotationVel = MaxRotationVel;
 	Settings.FrictionMultiplier = FrictionMultiplier;
+	Settings.LateralSlipGraphMultiplier = LateralSlipGraphMultiplier;
+	for (const FVector2D& Point : LateralSlipGraph)
+		Settings.LateralSlipGraph.Add(Chaos::FVec2(static_cast<float>(Point.X), static_cast<float>(Point.Y)));
 	Settings.CorneringStiffness = CorneringStiffness * 10000.0f;
 	Settings.SlipAngleLimit = SlipAngleLimit;
+	Settings.SlipModifier = SlipModifier;
 	Settings.MaxBrakeTorque = Chaos::TorqueMToCm(MaxBrakeTorque);
 	Settings.HandbrakeEnabled = bHandbrakeEnabled;
 	Settings.HandbrakeTorque = Chaos::TorqueMToCm(HandbrakeTorque);
+	Settings.AutoHandbrakeEnabled = bAutoHandbrakeEnabled;
+	Settings.AutoHandbrakeVelocityThreshold = AutoHandbrakeVelocityThreshold;
 	Settings.SteeringEnabled = bSteeringEnabled;
 	Settings.MaxSteeringAngle = bSteeringEnabled ? MaxSteeringAngle : 0.0f;
 	Settings.ABSEnabled = bABSEnabled;
 	Settings.TractionControlEnabled = bTractionControlEnabled;
-	Settings.Axis = static_cast<Chaos::EWheelAxis>(AxisType);
+	Settings.Axis = AxisType == ESingularisMorphVehicleWheelAxisType::Y ? Chaos::EWheelAxis::Y : Chaos::EWheelAxis::X;
 	Settings.ReverseDirection = ReverseDirection;
 	Settings.ForceOffset = ForceOffset;
 

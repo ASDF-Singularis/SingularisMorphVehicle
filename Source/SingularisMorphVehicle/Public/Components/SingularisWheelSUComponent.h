@@ -46,6 +46,19 @@ public:
 	)
 	FComponentReference LinkedSuspension{};
 
+	/** 链接的轮轴组件（单向引用，声明后车轮的扭矩父节点为该轮轴） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元",
+		meta = (
+			DisplayName = "链接轮轴",
+			UseComponentPicker,
+			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisAxleSUComponent"
+		)
+	)
+	FComponentReference LinkedAxle{};
+
 	/** 车轮半径（厘米） */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -82,6 +95,15 @@ public:
 	)
 	float WheelInertia = 10.0f;
 
+	/** 最大旋转角速度（弧度/秒） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
+		meta = (DisplayName = "最大旋转角速度")
+	)
+	float MaxRotationVel = 100.0f;
+
 	/** 摩擦系数倍率 */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -90,6 +112,15 @@ public:
 		meta = (DisplayName = "摩擦倍率")
 	)
 	float FrictionMultiplier = 2.0f;
+
+	/** 侧向滑移图倍率 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		meta = (DisplayName = "侧滑图倍率")
+	)
+	float LateralSlipGraphMultiplier = 1.0f;
 
 	/** 侧偏刚度 */
 	UPROPERTY(
@@ -100,6 +131,15 @@ public:
 	)
 	float CorneringStiffness = 1000.0f;
 
+	/** 侧向滑移图采样点（X 为侧滑角（度），Y 为侧向力，须按 X 等间距排列；为空时改用侧偏刚度） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		meta = (DisplayName = "侧滑图")
+	)
+	TArray<FVector2D> LateralSlipGraph{};
+
 	/** 侧滑角上限 */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -108,6 +148,15 @@ public:
 		meta = (DisplayName = "侧滑角上限")
 	)
 	float SlipAngleLimit = 8.0f;
+
+	/** 轮胎合力受附着极限削减时的衰减系数 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		meta = (DisplayName = "打滑衰减")
+	)
+	float SlipModifier = 0.9f;
 
 	/** 是否启用 ABS */
 	UPROPERTY(
@@ -153,6 +202,24 @@ public:
 		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled")
 	)
 	float HandbrakeTorque = 2000.0f;
+
+	/** 是否启用自动手刹 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		meta = (DisplayName = "启用自动手刹")
+	)
+	bool bAutoHandbrakeEnabled = false;
+
+	/** 自动手刹触发速度阈值（厘米/秒） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled")
+	)
+	float AutoHandbrakeVelocityThreshold = 10.0f;
 
 	/** 是否启用转向 */
 	UPROPERTY(

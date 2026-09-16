@@ -42,13 +42,15 @@ enum class ESingularisMorphVehicleAerofoilType : uint8
 
 /**
  * 引力奇点变型载具车轮轴向类型
+ *
+ * 仅包含 ChaosVehicles 车轮模块支持的两种纵轴约定，
+ * 不暴露模块无法处理的取值以避免静默错配。
  */
 UENUM(BlueprintType)
 enum class ESingularisMorphVehicleWheelAxisType : uint8
 {
 	X UMETA(DisplayName = "X轴"),
-	Y UMETA(DisplayName = "Y轴"),
-	Z UMETA(DisplayName = "Z轴")
+	Y UMETA(DisplayName = "Y轴")
 };
 
 /**

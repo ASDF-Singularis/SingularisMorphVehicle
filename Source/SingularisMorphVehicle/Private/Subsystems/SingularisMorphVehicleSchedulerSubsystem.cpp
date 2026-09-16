@@ -6,33 +6,7 @@
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Types/SingularisMorphModuleInputTokenStore.h"
 
-/**
- * 构造函数。
- *
- * bGInitialized 充当"全局一次初始化"标记：
- * 由于 WorldSubsystem 在每个 World 中各自实例化（PIE 多窗口、关卡流送等），
- * 构造函数可能被多次调用，此处通过标记确保全局副作用只执行一次。
- *
- * 原本在此处注册的 OnPostWorldInitialization / OnWorldCleanup 全局委托
- * 已迁移至 WorldSubsystem 的 PostInitialize() / Deinitialize() 生命周期管理，
- * 以避免多 World 场景下的委托冲突。
- */
-USingularisMorphVehicleSchedulerSubsystem::USingularisMorphVehicleSchedulerSubsystem()
-{
-	if (bGInitialized) return;
-	bGInitialized = true;
-
-	// 由 WorldSubsystem 生命周期代替
-	// OnPostWorldInitializationHandle = FWorldDelegates::OnPostWorldInitialization.AddUObject(
-	// 	this,
-	// 	&USingularisMorphVehicleSchedulerSubsystem::OnPostWorldInitialization
-	// );
-	//
-	// OnWorldCleanupHandle = FWorldDelegates::OnWorldCleanup.AddUObject(
-	// 	this,
-	// 	&USingularisMorphVehicleSchedulerSubsystem::OnWorldCleanup
-	// );
-}
+USingularisMorphVehicleSchedulerSubsystem::USingularisMorphVehicleSchedulerSubsystem() {}
 
 /**
  * WorldSubsystem 初始化入口。
@@ -118,30 +92,6 @@ void USingularisMorphVehicleSchedulerSubsystem::UnregisterVehicleComponent(
 }
 
 /**
- * World 初始化完成回调（全局委托，当前未被使用）。
- *
- * 原本用于在 World 就绪后绑定事件，现已由 WorldSubsystem::PostInitialize() 替代。
- * 保留此函数作为后备入口：若未来需要从全局委托而非子系统生命周期触发初始化。
- */
-void USingularisMorphVehicleSchedulerSubsystem::OnPostWorldInitialization(
-	UWorld* World,
-	FWorldInitializationValues WorldInitializationValues
-)
-{
-	BindEvent();
-}
-
-/**
- * World 清理回调（全局委托，当前未被使用）。
- *
- * 原本用于在 World 销毁时解绑事件，现已由 WorldSubsystem::Deinitialize() 替代。
- */
-void USingularisMorphVehicleSchedulerSubsystem::OnWorldCleanup(UWorld* World, bool bArg, bool bCond)
-{
-	UnbindEvent();
-}
-
-/**
  * 网络驱动创建回调。
  *
  * 在 NetDriver（客户端或服务器网络驱动）创建时被调用。
@@ -203,19 +153,16 @@ void USingularisMorphVehicleSchedulerSubsystem::OnNetTokenStoreReady(UNetDriver*
  *    - 写入物理代理引用（Proxy），物理线程通过它定位 Chaos 粒子。
  *    - 写入控制参数（PhysicsInputs），供物理线程 Simulate 使用。
  *
- * 注意：SubStepCount 在此处归零，由物理线程回调中递增。
+ * 注意：各载具在 PreTickGT 中刷新游戏线程状态并处理挂起的模块变更。
  */
 void USingularisMorphVehicleSchedulerSubsystem::OnPhysScenePreTick(
 	FPhysScene_Chaos* PhysScene_Chaos,
 	const float DeltaTime
 )
 {
-	// 1) 守卫
+	// 1) 守卫：World 或异步回调未就绪时跳过本帧
 	const UWorld* World = GetWorld();
-	if (!IsValid(World)) return;
-
-	// 重置子步计数（将在物理线程回调中随子步递增）
-	SubStepCount = 0;
+	if (!IsValid(World) || !AsyncCallback || !AsyncCallback->GetSolver()) return;
 
 	// 2) 阶段一：PreTickGT —— 刷新各载具的游戏线程状态
 	for (TWeakObjectPtr<USingularisMorphVehicleSimulationComponent>& Vehicle : VehicleSimulationComponents)
@@ -228,6 +175,7 @@ void USingularisMorphVehicleSchedulerSubsystem::OnPhysScenePreTick(
 	// 3) 阶段二 & 三：Update + FinalizeSimCallbackData
 	// 获取共享的异步输入缓冲区（将在物理线程的 OnPreSimulate_Internal 中被消费）
 	FSingularisMorphChaosSimModuleManagerAsyncInput* AsyncInput = AsyncCallback->GetProducerInputData_External();
+	if (!AsyncInput) return;
 
 	for (TWeakObjectPtr<USingularisMorphVehicleSimulationComponent>& Vehicle : VehicleSimulationComponents)
 	{
@@ -286,16 +234,16 @@ void USingularisMorphVehicleSchedulerSubsystem::OnPhysScenePostTick(FChaosScene*
  */
 void USingularisMorphVehicleSchedulerSubsystem::InjectInputs(const int PhysicsStep, const int NumSteps)
 {
-	// 1) 守卫：World 不存在或正在被销毁时无法注入输入
+	// 1) 守卫：World 不存在、或异步回调尚未注册/已注销时无法注入输入
 	UWorld* World = GetWorld();
-	if (!IsValid(World)) return;
+	if (!IsValid(World) || !AsyncCallback || !AsyncCallback->GetSolver()) return;
 
 	// 2) 获取异步输入缓冲区（游戏线程与物理线程共享的编组容器）
 	//
 	// GetProducerInputData_External() 返回的指针在回调生命周期内始终有效，
 	// 物理线程在 OnPreSimulate_Internal 中读取该缓冲区后由 Solver 自动管理切换。
 	FSingularisMorphChaosSimModuleManagerAsyncInput* AsyncInput = AsyncCallback->GetProducerInputData_External();
-	check(AsyncInput);
+	if (!AsyncInput) return;
 
 	// 3) 重置缓冲区并写入本帧元数据
 	//
@@ -357,13 +305,19 @@ void USingularisMorphVehicleSchedulerSubsystem::InjectInputs(const int PhysicsSt
  */
 void USingularisMorphVehicleSchedulerSubsystem::BindEvent()
 {
-	// 1) 注册网络驱动创建回调
+	// 1) 守卫：物理场景与求解器必须就绪
+	if (!PhysicsScene) return;
+
+	Chaos::FPhysicsSolver* Solver = PhysicsScene->GetSolver();
+	if (!Solver) return;
+
+	// 2) 注册网络驱动创建回调
 	OnNetDriverCreatedHandle = FWorldDelegates::OnNetDriverCreated.AddUObject(
 		this,
 		&USingularisMorphVehicleSchedulerSubsystem::OnNetDriverCreated
 	);
 
-	// 2) 注册物理场景前后Tick回调
+	// 3) 注册物理场景前后Tick回调
 	OnPhysScenePreTickHandle = PhysicsScene->OnPhysScenePreTick.AddUObject(
 		this,
 		&USingularisMorphVehicleSchedulerSubsystem::OnPhysScenePreTick
@@ -373,14 +327,14 @@ void USingularisMorphVehicleSchedulerSubsystem::BindEvent()
 		&USingularisMorphVehicleSchedulerSubsystem::OnPhysScenePostTick
 	);
 
-	// 3) 创建异步回调对象以管理异步 Ticking 与数据编组
-	AsyncCallback = PhysicsScene->GetSolver()->CreateAndRegisterSimCallbackObject_External<
+	// 4) 创建异步回调对象以管理异步 Ticking 与数据编组
+	AsyncCallback = Solver->CreateAndRegisterSimCallbackObject_External<
 		FSingularisMorphSimModuleManagerAsyncCallback
 	>();
 
-	// 4) 将输入注入函数注册至网络物理回放回调
+	// 5) 将输入注入函数注册至网络物理回放回调
 	if (const auto SolverRewindCallback = static_cast<FNetworkPhysicsCallback*>(
-		PhysicsScene->GetSolver()->GetRewindCallback()
+		Solver->GetRewindCallback()
 	))
 	{
 		SolverRewindCallback->InjectInputsExternal.AddUObject(
@@ -407,20 +361,33 @@ void USingularisMorphVehicleSchedulerSubsystem::BindEvent()
  */
 void USingularisMorphVehicleSchedulerSubsystem::UnbindEvent()
 {
-	// 1) 守卫：编辑器关闭时物理场景和求解器可能在子系统 Deinitialize 前已释放
-	if (!PhysicsScene) return;
+	// 1) 移除物理场景与网络委托（委托解绑是幂等的，重复调用无害；
+	//    编辑器关闭时物理场景可能已提前释放）
+	if (PhysicsScene)
+	{
+		PhysicsScene->OnPhysScenePreTick.Remove(OnPhysScenePreTickHandle);
+		PhysicsScene->OnPhysScenePostTick.Remove(OnPhysScenePostTickHandle);
 
-	auto* Solver = PhysicsScene->GetSolver();
-
-	// 2) 移除物理场景回调（委托解绑是幂等的，重复调用无害）
-	PhysicsScene->OnPhysScenePreTick.Remove(OnPhysScenePreTickHandle);
-	PhysicsScene->OnPhysScenePostTick.Remove(OnPhysScenePostTickHandle);
+		// 输入注入委托注册在求解器的网络回放回调上，须与 BindEvent 对称解绑
+		if (auto* Solver = PhysicsScene->GetSolver())
+		{
+			if (const auto SolverRewindCallback = static_cast<FNetworkPhysicsCallback*>(
+				Solver->GetRewindCallback()
+			))
+				SolverRewindCallback->InjectInputsExternal.RemoveAll(this);
+		}
+	}
 	FWorldDelegates::OnNetDriverCreated.Remove(OnNetDriverCreatedHandle);
 
-	// 3) 注销异步回调对象（从 Solver 移除并释放内存）
-	if (AsyncCallback && Solver)
+	// 2) 注销异步回调对象（从 Solver 移除并释放内存）。
+	//    无论 Solver 是否可用都必须置空句柄，避免后续回调访问已释放对象。
+	if (AsyncCallback)
 	{
-		Solver->UnregisterAndFreeSimCallbackObject_External(AsyncCallback);
+		if (PhysicsScene)
+		{
+			if (auto* Solver = PhysicsScene->GetSolver())
+				Solver->UnregisterAndFreeSimCallbackObject_External(AsyncCallback);
+		}
 		AsyncCallback = nullptr;
 	}
 }
@@ -482,6 +449,9 @@ void USingularisMorphVehicleSchedulerSubsystem::RegisterNetTokenDataStores(UNetD
  */
 void USingularisMorphVehicleSchedulerSubsystem::ParallelUpdateVehicles()
 {
+	// 1) 守卫：异步回调未注册或求解器已释放时无输出可取
+	if (!AsyncCallback || !AsyncCallback->GetSolver()) return;
+
 	// 物理线程当前已推进到的时刻（即异步步骤的结束时刻）
 	const double ResultsTime = AsyncCallback->GetSolver()->GetPhysicsResultsTime_External();
 	// 异步步骤的单步时长（物理子步的累计时间）

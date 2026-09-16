@@ -7,9 +7,12 @@
  */
 
 #include "Components/SingularisAerofoilSUComponent.h"
+#include "Components/SingularisAxleSUComponent.h"
 #include "Components/SingularisChassisSUComponent.h"
 #include "Components/SingularisClutchSUComponent.h"
 #include "Components/SingularisEngineSUComponent.h"
+#include "Components/SingularisMotorSUComponent.h"
 #include "Components/SingularisSuspensionSUComponent.h"
+#include "Components/SingularisThrusterSUComponent.h"
 #include "Components/SingularisTransmissionSUComponent.h"
 #include "Components/SingularisWheelSUComponent.h"

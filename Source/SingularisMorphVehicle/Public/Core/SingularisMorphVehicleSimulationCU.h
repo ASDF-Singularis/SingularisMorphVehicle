@@ -26,7 +26,10 @@ struct FSingularisMorphVehicleDebugParams
 	bool ShowWheelCollisionNormal = false;
 
 	bool DisableAnim = false;
-	float FrictionOverride = 1.0f;
+
+	/** 路面抓地力覆盖值：大于 0 时忽略物理材质摩擦，直接使用该值；
+	 *  默认 0 表示不覆盖，抓地力取自射线命中面的物理材质。 */
+	float FrictionOverride = 0.0f;
 };
 
 namespace Chaos

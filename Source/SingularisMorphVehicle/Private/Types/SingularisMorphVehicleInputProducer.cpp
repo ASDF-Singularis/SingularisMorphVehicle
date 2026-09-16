@@ -81,7 +81,6 @@ void USingularisMorphVehiclePlaybackInputProducer::InitializeContainer(
 
 	auto Seed = 123;
 	FRandomStream Random(Seed);
-	StartStep = 0;
 
 	// Initialize a single container once
 	FModuleInputContainer InputsForFrame;
@@ -111,26 +110,16 @@ void USingularisMorphVehiclePlaybackInputProducer::BufferInput(
 }
 
 void USingularisMorphVehiclePlaybackInputProducer::ProduceInput(
-	int32 PhysicsStep,
-	int32 NumSteps,
-	const FInputNameMap& InNameMap,
+	int32 /*PhysicsStep*/,
+	int32 /*NumSteps*/,
+	const FInputNameMap& /*InNameMap*/,
 	FModuleInputContainer& InOutContainer
 )
 {
-	if (StartStep == 0)
-		StartStep = PhysicsStep;
-
-	int32 UseIndex = PhysicsStep - StartStep + NumSteps - 1;
-	if (UseIndex >= 0 && UseIndex < PlaybackBuffer.Num())
-	{
-		FModuleInputContainer& UseContainer = PlaybackBuffer[UseIndex];
-		InOutContainer = UseContainer;
-	}
-	else
-	{
-		InOutContainer.ZeroValues();
-		StartStep = PhysicsStep; // restart loop
-	}
+	// 回放索引由物理线程按求解器帧号完成（FSingularisMorphVehicleSimulation::SimulateModuleTree）：
+	// 物理线程会以同一份回放缓冲覆盖本容器，游戏线程按物理步号的取值没有消费方，
+	// 且与物理线程的帧号时基不一致，因此此处不参与取值
+	InOutContainer.ZeroValues();
 }
 
 
@@ -164,9 +153,6 @@ void USingularisMorphVehicleRandomInputProducer::ProduceInput(
 	FModuleInputContainer& InOutContainer
 )
 {
-	auto Seed = 123;
-	static FRandomStream Random(Seed);
-
 	// new control settings generated every ChangeInputFrequency number of frames (every frame is too quick)
 	// previous controls are held in the PlaybackContainer between the changes
 	if (PhysicsStep % ChangeInputFrequency == 0)
@@ -176,8 +162,8 @@ void USingularisMorphVehicleRandomInputProducer::ProduceInput(
 
 		// generate new random input
 		FInputInterface Inputs(InNameMap, PlaybackContainer, InputQuantizationType);
-		Inputs.SetValue("Throttle", Random.FRand());
-		Inputs.SetValue("Steering", 1.0f - 2.0f * Random.FRand());
+		Inputs.SetValue("Throttle", RandomStream.FRand());
+		Inputs.SetValue("Steering", 1.0f - 2.0f * RandomStream.FRand());
 	}
 
 	InOutContainer = PlaybackContainer;

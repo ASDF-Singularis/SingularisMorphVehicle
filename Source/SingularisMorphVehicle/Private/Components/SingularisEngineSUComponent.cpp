@@ -32,15 +32,15 @@ Chaos::ISimulationModuleBase* USingularisEngineSUComponent::CreateNewCoreModule(
 
 	Settings.MaxTorque = Chaos::TorqueMToCm(MaxTorque);
 
-	// 2) 采样扭矩曲线并归一化
+	// 2) 采样扭矩曲线并归一化。范围只取一次（曲线在循环内不会变化），
+	//    全零曲线无法归一化，此时按原值采样以避免除零
+	auto MinVal = 0.0f, MaxVal = 0.0f;
+	TorqueCurve.GetRichCurveConst()->GetValueRange(MinVal, MaxVal);
+	const float NormalizeScale = FMath::IsNearlyZero(MaxVal) ? 1.0f : 1.0f / MaxVal;
+
 	constexpr float NumSamples = 20;
 	for (float X = 0.0; X <= MaxRPM; X += MaxRPM / NumSamples)
-	{
-		auto MinVal = 0.0f, MaxVal = 0.0f;
-		TorqueCurve.GetRichCurveConst()->GetValueRange(MinVal, MaxVal);
-		const float Y = this->TorqueCurve.GetRichCurveConst()->Eval(X) / MaxVal;
-		Settings.TorqueCurve.AddNormalized(Y);
-	}
+		Settings.TorqueCurve.AddNormalized(TorqueCurve.GetRichCurveConst()->Eval(X) * NormalizeScale);
 
 	Settings.MaxRPM = MaxRPM;
 	Settings.IdleRPM = EngineIdleRPM;

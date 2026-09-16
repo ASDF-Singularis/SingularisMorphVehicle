@@ -33,7 +33,8 @@ public:
 		EditAnywhere,
 		BlueprintReadWrite,
 		Category = "SingularisMorphVehicle|引力奇点变型载具集群联合适配器|参数",
-		meta = (DisplayName = "集群联合组件", UseComponentPicker, AllowedClasses = "/Script/Engine.ClusterUnionComponent")
+		meta = (DisplayName = "集群联合组件", UseComponentPicker, AllowedClasses =
+			"/Script/SingularisMorphVehicle.SingularisMorphVehicleClusterUnionComponent")
 	)
 	FComponentReference ClusterUnionComponentReference{};
 

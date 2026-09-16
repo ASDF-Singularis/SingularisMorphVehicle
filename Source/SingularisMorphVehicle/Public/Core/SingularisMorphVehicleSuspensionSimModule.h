@@ -134,7 +134,7 @@ public:
  * 在物理线程中运行，模拟悬挂弹簧-阻尼系统的力学行为，
  * 包括碰撞检测（射线/球体）、弹簧力计算与约束创建。
  */
-class FSingularisMorphVehicleSuspensionSimModule
+class SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSuspensionSimModule
 	: public Chaos::FSuspensionBaseInterface,
 	  public Chaos::TSimModuleSettings<FSingularisMorphSuspensionSettings>,
 	  public Chaos::TSimulationModuleTypeable<FSingularisMorphVehicleSuspensionSimModule>

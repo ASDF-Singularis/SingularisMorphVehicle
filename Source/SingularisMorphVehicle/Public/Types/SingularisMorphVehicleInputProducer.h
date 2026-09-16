@@ -39,6 +39,7 @@ public:
  * 引力奇点变型载具回放输入生产者。
  *
  * 记录输入缓冲区并在物理线程中循环回放，用于测试与确定性模拟验证。
+ * 回放索引由物理线程按求解器帧号推进，游戏线程不参与取值。
  */
 UCLASS(BlueprintType, Blueprintable)
 class SINGULARISMORPHVEHICLE_API USingularisMorphVehiclePlaybackInputProducer : public UVehicleInputProducerBase
@@ -69,7 +70,6 @@ public:
 
 	TArray<FModuleInputContainer> PlaybackBuffer;
 	int32 BufferLength = 150;
-	int32 StartStep = 0;
 };
 
 /**
@@ -103,4 +103,7 @@ public:
 
 	FModuleInputContainer PlaybackContainer;
 	int32 ChangeInputFrequency = 10;
+
+	/** 每个实例独立的随机流，避免多个载具在物理线程共享状态 */
+	FRandomStream RandomStream{123};
 };

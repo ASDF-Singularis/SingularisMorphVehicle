@@ -41,7 +41,7 @@ public:
 		meta = (
 			DisplayName = "链接变速箱",
 			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisMorphVehicleTransmissionComponent"
+			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisTransmissionSUComponent"
 		)
 	)
 	FComponentReference LinkedTransmission{};

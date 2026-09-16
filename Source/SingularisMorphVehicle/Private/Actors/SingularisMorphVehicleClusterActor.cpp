@@ -2,6 +2,7 @@
 
 #include "Components/SingularisMorphVehicleClusterUnionComponent.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
+#include "Objects/SingularisMorphVehicleClusterUnionAdapter.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleClusterActor)
 
@@ -25,12 +26,28 @@ ASingularisMorphVehicleClusterActor::ASingularisMorphVehicleClusterActor()
 		TEXT("VehicleMovementComponent")
 	);
 
+	// 4) 创建集群联合适配器并配置引用
+	USingularisMorphVehicleClusterUnionAdapter* Adapter = CreateDefaultSubobject<
+		USingularisMorphVehicleClusterUnionAdapter>(
+		TEXT("ClusterUnionAdapter")
+	);
+	Adapter->ClusterUnionComponentReference.OtherActor = this;
+	Adapter->ClusterUnionComponentReference.PathToComponent = VehicleClusterUnionComponent->GetName();
+	Adapter->ClusterUnionComponentReference.ComponentProperty = VehicleClusterUnionComponent->GetFName();
+
+	// 5) 替换模拟组件的默认物理适配器为集群联合适配器
+	VehicleMovementComponent->PhysicsAdapter = Adapter;
+
 	SetRemoteRoleForBackwardsCompat(ROLE_SimulatedProxy);
 }
 
 void ASingularisMorphVehicleClusterActor::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 集群子件组装由集群联合组件统一完成（仅权威端生效）
+	if (VehicleClusterUnionComponent)
+		VehicleClusterUnionComponent->AddOwnedComponentsToCluster();
 }
 
 void ASingularisMorphVehicleClusterActor::Tick(float DeltaTime)

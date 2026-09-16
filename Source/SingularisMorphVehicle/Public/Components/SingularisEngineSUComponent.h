@@ -87,7 +87,7 @@ public:
 		meta = (
 			DisplayName = "链接离合器",
 			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisMorphVehicleClutchComponent"
+			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisClutchSUComponent"
 		)
 	)
 	FComponentReference LinkedClutch{};
