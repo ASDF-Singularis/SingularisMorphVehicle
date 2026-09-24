@@ -38,6 +38,7 @@ struct FSingularisMorphSuspensionSimModuleData
 	{
 		Ar << SpringDisplacement;
 		Ar << LastDisplacement;
+		Ar << DisplacementVelocity;
 	}
 
 	virtual void Lerp(const float LerpFactor, const FModuleNetData& Min, const FModuleNetData& Max) override;
@@ -48,6 +49,7 @@ struct FSingularisMorphSuspensionSimModuleData
 
 	float SpringDisplacement = 0.0f;
 	float LastDisplacement = 0.0f;
+	float DisplacementVelocity = 0.0f;
 };
 
 /**
@@ -97,6 +99,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphSuspensionSettings
 		  SpringRate(1.0f),
 		  SpringPreload(0.5f),
 		  SpringDamping(0.9f),
+		  VirtualWheelMassKg(20.0f),
 		  SuspensionForceEffect(100.0f) {}
 
 	FVector SuspensionAxis;
@@ -107,6 +110,8 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphSuspensionSettings
 	float SpringRate;
 	float SpringPreload;
 	float SpringDamping;
+	/** 虚拟轮质量（千克）：空中悬挂舒展的一维动力学质量，越大舒展越慢 */
+	float VirtualWheelMassKg;
 	float SuspensionForceEffect;
 };
 
@@ -198,6 +203,10 @@ private:
 	float LastDisplacement = 0.0f;
 	float SpringSpeed = 0.0f;
 	float CurrentTimeDilation = 1.0f;
+	/** 接触几何目标位移（每步由 SetSpringLength 记录，接触时采纳） */
+	float GeometricDisplacement = 0.0f;
+	/** 压缩速率（正 = 压缩）：空中动力学积分的状态量 */
+	float DisplacementVelocity = 0.0f;
 	FPhysicsConstraintHandle ConstraintHandle;
 };
 

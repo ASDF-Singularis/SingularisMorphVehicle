@@ -29,6 +29,7 @@ Chaos::ISimulationModuleBase* USingularisSuspensionSUComponent::CreateNewCoreMod
 	Settings.SpringRate = Chaos::MToCm(SpringRate);
 	Settings.SpringPreload = Chaos::MToCm(SpringPreload);
 	Settings.SpringDamping = SpringDamping;
+	Settings.VirtualWheelMassKg = VirtualWheelMassKg;
 	Settings.SuspensionForceEffect = SuspensionForceEffect;
 
 	// 2) 创建悬挂仿真模块并启用动画

@@ -78,6 +78,15 @@ public:
 	)
 	float SpringDamping = 0.9f;
 
+	/** 虚拟轮质量（千克）：空中悬挂舒展的一维动力学质量，越大舒展越慢 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "SingularisMorphVehicle|引力奇点悬挂仿真单元|弹簧力学",
+		meta = (DisplayName = "虚拟轮质量")
+	)
+	float VirtualWheelMassKg = 20.0f;
+
 	/** 悬挂力效应（将车轮压向地面的力） */
 	UPROPERTY(
 		EditDefaultsOnly,

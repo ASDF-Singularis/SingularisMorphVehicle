@@ -23,6 +23,7 @@ void FSingularisMorphSuspensionSimModuleData::FillSimState(ISimulationModuleBase
 	{
 		Sim->SpringDisplacement = SpringDisplacement;
 		Sim->LastDisplacement = LastDisplacement;
+		Sim->DisplacementVelocity = DisplacementVelocity;
 	}
 }
 
@@ -33,6 +34,7 @@ void FSingularisMorphSuspensionSimModuleData::FillNetState(const ISimulationModu
 	{
 		SpringDisplacement = Sim->SpringDisplacement;
 		LastDisplacement = Sim->LastDisplacement;
+		DisplacementVelocity = Sim->DisplacementVelocity;
 	}
 }
 
@@ -47,6 +49,7 @@ void FSingularisMorphSuspensionSimModuleData::Lerp(
 
 	SpringDisplacement = FMath::Lerp(MinData.SpringDisplacement, MaxData.SpringDisplacement, LerpFactor);
 	LastDisplacement = FMath::Lerp(MinData.LastDisplacement, MaxData.LastDisplacement, LerpFactor);
+	DisplacementVelocity = FMath::Lerp(MinData.DisplacementVelocity, MaxData.DisplacementVelocity, LerpFactor);
 }
 
 FSingularisMorphVehicleSuspensionSimModule::FSingularisMorphVehicleSuspensionSimModule(
@@ -69,9 +72,10 @@ float FSingularisMorphVehicleSuspensionSimModule::GetSpringLength() const
 
 void FSingularisMorphVehicleSuspensionSimModule::SetSpringLength(float InLength, float WheelRadius)
 {
-	float DisplacementInput = InLength;
-	DisplacementInput = FMath::Max(0.f, DisplacementInput);
-	SpringDisplacement = Setup().MaxLength - DisplacementInput;
+	// 仅记录几何目标位移：接触时由 Simulate 采纳（地面钳制车轮），
+	// 空中时不再直接覆盖，由动力学积分接管
+	const float DisplacementInput = FMath::Max(0.f, InLength);
+	GeometricDisplacement = FMath::Clamp(Setup().MaxLength - DisplacementInput, 0.f, Setup().MaxLength);
 }
 
 void FSingularisMorphVehicleSuspensionSimModule::GetWorldTraceEndpoints(
@@ -95,8 +99,9 @@ void FSingularisMorphVehicleSuspensionSimModule::GetWorldTraceEndpoints(
 		MovementExpansion += WorldDirection * (Amount * DeltaSeconds / CurrentTimeDilation);
 	}
 
-	OutTrace.Start = WorldLocation - WorldDirection * Setup().MaxRaise;
-	OutTrace.End = WorldLocation + WorldDirection * (Setup().MaxDrop + WheelRadius) + MovementExpansion;
+	// 锚点即舒展态轮心位：探测范围 = [全压缩点（锚点上方 MaxLength），舒展点 + 轮半径]
+	OutTrace.Start = WorldLocation - WorldDirection * Setup().MaxLength;
+	OutTrace.End = WorldLocation + WorldDirection * WheelRadius + MovementExpansion;
 }
 
 void FSingularisMorphVehicleSuspensionSimModule::OnConstruction_External(const FPhysicsObjectHandle& PhysicsObject)
@@ -118,37 +123,67 @@ void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 	FSimModuleTree& VehicleModuleSystem
 )
 {
+	CurrentTimeDilation = FMath::Max(Inputs.CurrentTimeDilation, SMALL_NUMBER);
+	const float ClampedDT = FMath::Max(DeltaTime, SMALL_NUMBER);
+
+	if (IsWheelInContact())
 	{
-		CurrentTimeDilation = FMath::Max(Inputs.CurrentTimeDilation, SMALL_NUMBER);
-		auto ForceIntoSurface = 0.0f;
-		if (SpringDisplacement > 0)
+		// 接触：地面钳制车轮，位移由几何决定；
+		// 速度取几何变化率，作为离地瞬间动力学积分的初速度
+		SpringDisplacement = GeometricDisplacement;
+		DisplacementVelocity = FMath::Clamp(
+			(SpringDisplacement - LastDisplacement) / ClampedDT, -1e4f, 1e4f);
+	}
+	else
+	{
+		// 空中：虚拟轮质量 + 弹簧 + 阻尼一维积分，舒展有过程而非瞬时跳变。
+		// 沿压缩方向（位移增大为正）：弹簧与预载推向舒展（负方向），阻尼抵抗运动
+		const float Mass = FMath::Max(Setup().VirtualWheelMassKg, 1.0f);
+		const float ExtensionForce = Setup().SpringRate * SpringDisplacement + Setup().SpringPreload;
+		const float Accel = -(ExtensionForce + Setup().SpringDamping * DisplacementVelocity) / Mass;
+		DisplacementVelocity += Accel * ClampedDT;
+		SpringDisplacement += DisplacementVelocity * ClampedDT;
+
+		// 行程硬限位：0 = 舒展态（安放点），MaxLength = 全压缩
+		if (SpringDisplacement <= 0.f)
 		{
-			float Damping = Setup().SpringDamping;
-			DeltaTime = FMath::Max(DeltaTime, SMALL_NUMBER);
-			SpringSpeed = (LastDisplacement - SpringDisplacement) / DeltaTime;
-
-			float StiffnessForce = SpringDisplacement * Setup().SpringRate;
-			float DampingForce = SpringSpeed * Damping;
-			float SuspensionForce = StiffnessForce - DampingForce;
-			LastDisplacement = SpringDisplacement;
-
-			if (SuspensionForce > 0)
-			{
-				ForceIntoSurface = SuspensionForce * Setup().SuspensionForceEffect;
-
-				if (!ConstraintHandle.IsValid())
-					AddLocalForce(Setup().SuspensionAxis * -SuspensionForce, true, false, true, FColor::Green);
-			}
+			SpringDisplacement = 0.f;
+			DisplacementVelocity = FMath::Max(DisplacementVelocity, 0.f);
 		}
-
-		// tell wheels how much they are being pressed into the ground
-		if (SimModuleTree && WheelSimTreeIndex != INVALID_IDX)
+		else if (SpringDisplacement >= Setup().MaxLength)
 		{
-			if (ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(WheelSimTreeIndex))
-			{
-				if (FWheelBaseInterface* Wheel = Module->Cast<FWheelBaseInterface>())
-					Wheel->SetForceIntoSurface(ForceIntoSurface);
-			}
+			SpringDisplacement = Setup().MaxLength;
+			DisplacementVelocity = FMath::Min(DisplacementVelocity, 0.f);
+		}
+	}
+
+	// SpringSpeed 沿用旧约定：(LastDisplacement - 当前位移) / dt，即 -压缩速率
+	SpringSpeed = -DisplacementVelocity;
+	LastDisplacement = SpringDisplacement;
+
+	// 载荷与车体力仅在接触时输出：空中舒展过程不产生抓地力与支撑力
+	float ForceIntoSurface = 0.0f;
+	if (IsWheelInContact() && SpringDisplacement > 0.f)
+	{
+		const float StiffnessForce = SpringDisplacement * Setup().SpringRate;
+		const float DampingForce = SpringSpeed * Setup().SpringDamping;
+		const float SuspensionForce = StiffnessForce - DampingForce;
+		if (SuspensionForce > 0.f)
+		{
+			ForceIntoSurface = SuspensionForce * Setup().SuspensionForceEffect;
+
+			if (!ConstraintHandle.IsValid())
+				AddLocalForce(Setup().SuspensionAxis * -SuspensionForce, true, false, true, FColor::Green);
+		}
+	}
+
+	// tell wheels how much they are being pressed into the ground
+	if (SimModuleTree && WheelSimTreeIndex != INVALID_IDX)
+	{
+		if (ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(WheelSimTreeIndex))
+		{
+			if (FWheelBaseInterface* Wheel = Module->Cast<FWheelBaseInterface>())
+				Wheel->SetForceIntoSurface(ForceIntoSurface);
 		}
 	}
 
@@ -158,7 +193,9 @@ void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 
 void FSingularisMorphVehicleSuspensionSimModule::Animate()
 {
-	FVector Movement = -Setup().SuspensionAxis * (Setup().MaxRaise + GetSpringLength());
+	// 零偏移点 = 舒展态（SpringDisplacement == 0）：安放点即轮胎静止位，压缩量直接映射为向上偏移，
+	// 全压缩时向上 MaxLength。与 FillOutputState 的 SpringDisplacementVector 语义一致
+	FVector Movement = -Setup().SuspensionAxis * SpringDisplacement;
 
 	AnimationData.AnimFlags = EAnimationFlags::AnimatePosition;
 	AnimationData.AnimationLocOffset = Movement;
@@ -198,7 +235,10 @@ void FSingularisMorphVehicleSuspensionSimModule::CreateConstraint(const FPhysics
 	// 幂等：已持有约束时不重建，否则重复构建会让旧约束失去句柄而永久残留
 	if (ConstraintHandle.IsValid()) return;
 
-	const FVector& LocalOffset = GetInitialParticleTransform().GetLocation();
+	// 锚点上移 MaxDrop 回中性点：约束窗口 [−MaxRaise, +MaxDrop] 围绕中性点设计，
+	// 安放点语义改为舒展态后窗口不动，物理行为与旧版一致
+	const FVector LocalOffset =
+		GetInitialParticleTransform().GetLocation() - Setup().SuspensionAxis * Setup().MaxDrop;
 
 	if (auto Scene = FPhysicsObjectExternalInterface::GetScene({&PhysicsObject, 1}))
 	{
@@ -323,14 +363,15 @@ void FSingularisMorphSuspensionOutputData::GetFinalAnimDataGameThread(
 
 	FVector WorldLocation = NewTransform.TransformPosition(ModuleLocalPosition);
 	FVector WorldDirection = NewTransform.TransformVector(LocalSuspensionAxis);
-	FVector NewStart = WorldLocation - WorldDirection * MaxRaise;
+	FVector NewStart = WorldLocation - WorldDirection * (MaxDrop + MaxRaise);
 	FVector NewEnd = ImpactPosition;
 	float Length = FVector::DotProduct(NewStart - NewEnd, WorldDirection);
 	Length = FMath::Clamp(Length, -(MaxDrop + MaxRaise), 0);
-	FVector Movement = -LocalSuspensionAxis * (Length + MaxRaise);
+	FVector Movement = -LocalSuspensionAxis * (Length + MaxDrop + MaxRaise);
 
+	// 无命中：使用动力学积分的位移，舒展有过程；零偏移点 = 舒展态安放点
 	if (!bWheelHit)
-		Movement = LocalSuspensionAxis * MaxDrop;
+		Movement = -LocalSuspensionAxis * SpringDisplacement;
 
 	AnimDataOut.AnimFlags = EAnimationFlags::AnimatePosition;
 	AnimDataOut.AnimationLocOffset = Movement;
