@@ -59,6 +59,10 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshotE
 	/**
 	 * 相对于父粒子的局部变换。
 	 * 源自 ClusterUnionChildData::ChildToParent，用于初始化模块空间姿态。
+	 *
+	 * 注意：引擎会把模块的动画位移写回该字段，因此它携带的是
+	 * 「静止基准 + 当帧动画位移」的合成值。消费端仅可在部件首次注册时
+	 * 将它作为静止基准，重建时须复用已捕获的基准（见 FSingularisMorphModuleRestPose）。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FTransform ChildToParent = FTransform::Identity;

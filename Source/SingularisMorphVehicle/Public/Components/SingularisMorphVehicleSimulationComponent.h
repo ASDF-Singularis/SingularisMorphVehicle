@@ -271,6 +271,19 @@ private:
 	/** 模块动画配置列表 */
 	TArray<FSingularisMorphModuleAnimationSetup> ModuleAnimationSetups{};
 
+	/**
+	 * 模块静止基准缓存（仅游戏线程）。
+	 *
+	 * 键为「驱动组件 + 集群子粒子唯一索引」，值为首次注册时捕获的静止位姿。
+	 * 拓扑重建复用既有条目而不重读实时 ChildToParent：后者携带引擎写回的动画位移，
+	 * 重读会把当帧姿态固化为新基准，逐次重建累积为可视轮位与悬挂行程漂移。
+	 *
+	 * 缓存不随物理状态重建清除：粒子未变时既有基准仍然有效，清除反而会把
+	 * 动画写回值当作新基准；粒子已重建时键不匹配，自动重新捕获。
+	 * 条目在每次重建后按当前快照裁剪，不随部件反复增删无界累积。
+	 */
+	TMap<FSingularisMorphModuleRestPoseKey, FSingularisMorphModuleRestPose> ModuleRestPoses{};
+
 	/** 缓存的物理代理（仅游戏线程） */
 	mutable IPhysicsProxyBase* CachedPhysicsProxy = nullptr;
 
@@ -728,6 +741,8 @@ private:
 	 * 将单个 CoreModule 注册到模拟树，设置正确的粒子索引和变换。
 	 * BoneName/AnimationOffset 来自模块对应的 SU 组件，用于绑定动画槽位；
 	 * 留空时沿用模块自身的骨骼信息（手动注册路径）。
+	 * PhysicalTransform 为模块的静止基准（手动注册路径由调用方保证其静止性），
+	 * 簇集路径由 RebuildFromSnapshot 从静止基准缓存取得。
 	 *
 	 * @return TreeIndex，失败返回 INDEX_NONE
 	 */
@@ -757,6 +772,39 @@ private:
 		const FVector& AnimationOffset,
 		const FTransform& InitialTransform
 	);
+
+	/**
+	 * 采集各 SU 对应模块的积分状态到 SU。
+	 *
+	 * 模块在拓扑重建、解体中被销毁并按几何重新创建，而车轮转角/转速、挡位、
+	 * 离合器、悬挂压缩属于积分量，不随几何重算；不采集并回填就会在每次
+	 * 增删部件时归零（行驶中表现为车轮旋转突跳、掉挡与动力中断）。
+	 * 采集经模块自身的网络数据通道（GenerateNetData/FillNetState），
+	 * 未提供网络数据的模块不参与转移；重复调用幂等（每次覆盖为当时状态）。
+	 */
+	void CaptureModuleSimStates();
+
+	/**
+	 * 取得模块静止基准。
+	 *
+	 * 首次注册时以传入的实时值捕获入库，此后同一（组件, 粒子）重建时
+	 * 一律返回已捕获的基准，避免把引擎写回的动画位移固化为新的静止基准。
+	 *
+	 * @param Component 驱动组件（缓存键的一半）
+	 * @param ParticleIndex 集群子粒子唯一索引（缓存键的另一半）
+	 * @param RestTransform 实时静止基准（仅首次注册时使用）
+	 * @param ComponentTransform 实时驱动组件变换（仅首次注册时使用）
+	 * @return 静止基准引用（缓存内部存储，随键失效而失效）
+	 */
+	const FSingularisMorphModuleRestPose& AcquireModuleRestPose(
+		UPrimitiveComponent* Component,
+		int32 ParticleIndex,
+		const FTransform& RestTransform,
+		const FTransform& ComponentTransform
+	);
+
+	/** 按当前快照裁剪静止基准缓存，丢弃已离簇部件（粒子不再存在）的条目 */
+	void PruneModuleRestPoses(const TSet<FSingularisMorphModuleRestPoseKey>& LiveKeys);
 
 #pragma endregion
 

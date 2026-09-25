@@ -3,6 +3,7 @@
 #include <CoreMinimal.h>
 #include <Components/ActorComponent.h>
 #include <SimModule/ModuleInput.h>
+#include <SimModule/SimulationModuleBase.h>
 
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
 #include "SingularisMorphVehicleSUComponent.generated.h"
@@ -92,6 +93,19 @@ private:
 	 */
 	int32 ModuleGuid = INDEX_NONE;
 
+	/**
+	 * 模块积分状态（车轮转角/转速、挡位、离合器、悬挂压缩等）。
+	 *
+	 * 拓扑重建会销毁并按几何重新创建模块，而积分量不随几何重算，
+	 * 故重建前由 SimulationComponent 调 GenerateNetData/FillNetState 采集到此处，
+	 * 新建模块后以 FillSimState 回填；不转移则每次增删部件都会让已在旋转的车轮
+	 * 转角突跳（旋转抖动）、掉挡与动力中断。
+	 * 每次重建被最新状态覆盖；模块暂时消失（部件离簇）时状态保留，
+	 * 重新入簇后继续沿用；未提供网络数据的模块（底盘、翼型、轮轴、电机等）不参与转移。
+	 * 该数据仅用于本地重建间的状态传递，不进入网络复制结构。
+	 */
+	TSharedPtr<Chaos::FModuleNetData> ModuleSimState{};
+
 #pragma endregion
 
 public:
@@ -105,6 +119,16 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+#pragma endregion
+
+#pragma region Module State
+
+	/** 获取采集的模块积分状态（尚未采集时为 nullptr） */
+	const TSharedPtr<Chaos::FModuleNetData>& GetModuleSimState() const { return ModuleSimState; }
+
+	/** 采集模块积分状态，供拓扑重建后回填到新建模块 */
+	void SetModuleSimState(TSharedPtr<Chaos::FModuleNetData> InState) { ModuleSimState = MoveTemp(InState); }
 
 #pragma endregion
 

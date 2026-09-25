@@ -337,6 +337,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (GuidToCoreModule.IsEmpty()) return;
 
+		// 解体前先固化模块积分状态，使重组（部件回簇）后车轮转角等积分量得以延续
+		CaptureModuleSimStates();
 		ClearAllSimulationModules();
 		return;
 	}
@@ -412,6 +414,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			Snapshot.Entities.Num()
 		);
 
+		CaptureModuleSimStates();
 		ClearAllSimulationModules();
 		return;
 	}
@@ -441,7 +444,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			break;
 		}
 
-		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(SUComp->DrivenComponent.GetComponent(Owner));
+		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
+			SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
+		);
 		if (ExistingModule->ProxyComponentToAnimate.Get() != static_cast<USceneComponent*>(ProxyComp))
 		{
 			bTopologyUnchanged = false;
@@ -458,6 +463,26 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 	if (bTopologyUnchanged) return;
 
+	// 5b) 裁剪静止基准缓存：仅保留本次快照仍存活的（驱动组件, 粒子）键。
+	//     部件离簇后其粒子不再存在，条目随之失效；部件重新入簇时粒子已重建，
+	//     键不匹配而触发重新捕获，不会沿用陈旧基准
+	{
+		TSet<FSingularisMorphModuleRestPoseKey> LiveKeys;
+		LiveKeys.Reserve(Snapshot.Entities.Num());
+
+		for (const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity& Entity : Snapshot.Entities)
+		{
+			if (Entity.PrimitiveComponent)
+			{
+				LiveKeys.Add(
+					FSingularisMorphModuleRestPoseKey{Entity.PrimitiveComponent.Get(), Entity.ParticleIndex}
+				);
+			}
+		}
+
+		PruneModuleRestPoses(LiveKeys);
+	}
+
 	// 6) 模块集合可能已变化（变形增删部件），刷新输入配置。
 	//     配置未变更时该调用为空操作，不会清空输入容器。
 	SetupInputConfiguration();
@@ -465,6 +490,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	const FTransform ReferenceTransform = PhysicsAdapter
 		                                      ? PhysicsAdapter->GetReferenceTransform()
 		                                      : FTransform::Identity;
+
+	// 6b) 采集各模块的积分状态，供重建后回填到新建模块
+	CaptureModuleSimStates();
 
 	// 7) 移除旧模块：收集已有 GUID 并全部标记删除
 	TArray<int32> ExistingGuids;
@@ -496,7 +524,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 	// 9) 核心 Lambda：将单个 SU 注册到模拟树。
 	//    通过 SU 的 DrivenComponent 解析物理组件：
-	//    - 物理组件在快照实体中（集群子粒子）→ 复用其粒子索引与集群变换；
+	//    - 物理组件在快照实体中（集群子粒子）→ 复用其粒子索引与静止基准；
 	//    - 驱动组件缺失或不在本次快照中（纯仿真模块）→ 粒子无效，变换取组件/根相对变换。
 	TSet<USingularisMorphVehicleSUComponent*> ProcessedComponents;
 
@@ -511,29 +539,55 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		// 不自带动画而不会在 CreateNewCoreModule 中同步该标志，此处统一同步
 		CoreModule->SetAnimationEnabled(SUComp->GetAnimationEnabled());
 
+		// 继承上一轮同 SU 模块的积分状态：重建按几何重建模块，但车轮转角/转速、
+		// 挡位、离合器、悬挂压缩属于积分量，必须延续（见 ModuleSimState）。
+		// 以「新模块认识采集数据的类型」为转移前提，与网络数据自身的类型断言一致
+		if (const TSharedPtr<Chaos::FModuleNetData>& ModuleState = SUComp->GetModuleSimState();
+			ModuleState && CoreModule->IsSimType(ModuleState->GetSimType()))
+			ModuleState->FillSimState(CoreModule);
+
+		// 驱动组件解析以 SU 自身 Owner 为上下文：部件可自带 SU 组件
+		// （被停靠、动态生成的部件，其驱动组件不在宿主 Actor 内）
 		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
-			SUComp->DrivenComponent.GetComponent(Owner)
+			SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
 		);
 		const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity* Entity = ProxyComp
 			                                                                    ? EntityMap.FindRef(ProxyComp)
 			                                                                    : nullptr;
 
-		FTransform CompTransform = FTransform::Identity;
+		FTransform ComponentTransform = FTransform::Identity;
 		if (ProxyComp)
-			CompTransform = ProxyComp->GetComponentTransform().GetRelativeTransform(ReferenceTransform);
+			ComponentTransform = ProxyComp->GetComponentTransform().GetRelativeTransform(ReferenceTransform);
 		else if (const USceneComponent* RootComp = Owner->GetRootComponent())
-			CompTransform = RootComp->GetComponentTransform().GetRelativeTransform(ReferenceTransform);
-		CompTransform = SUComp->TransformOffset * CompTransform;
+			ComponentTransform = RootComp->GetComponentTransform().GetRelativeTransform(ReferenceTransform);
+
+		// 静止基准：簇集子件首次注册时从快照捕获，此后重建复用。
+		// 快照的 ChildToParent 携带引擎写回的动画位移，直接重读会使基准逐次漂移
+		FTransform RestTransform = FTransform::Identity;
+		if (Entity)
+		{
+			const FSingularisMorphModuleRestPose& RestPose = AcquireModuleRestPose(
+				ProxyComp,
+				Entity->ParticleIndex,
+				Entity->ChildToParent,
+				ComponentTransform
+			);
+
+			RestTransform = RestPose.RestTransform;
+			ComponentTransform = RestPose.ComponentTransform;
+		}
+
+		ComponentTransform = SUComp->TransformOffset * ComponentTransform;
 
 		const int32 TransformIndex = NextConstructionIndex++;
 
 		const int32 ModuleIdx = AddModuleToTree(
 			CoreModule,
-			CompTransform,
+			ComponentTransform,
 			ParentIndex,
 			TransformIndex,
 			Entity ? Chaos::FUniqueIdx(Entity->ParticleIndex) : Chaos::FUniqueIdx(),
-			Entity ? Entity->ChildToParent : FTransform::Identity,
+			RestTransform,
 			SUComp->GetBoneName(),
 			SUComp->GetAnimationOffset()
 		);
@@ -594,10 +648,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		-> USingularisClutchSUComponent*
 	{
 		if (const auto* EngineSU = Cast<USingularisEngineSUComponent>(PrimeMover))
-			return Cast<USingularisClutchSUComponent>(EngineSU->LinkedClutch.GetComponent(Owner));
+			return Cast<USingularisClutchSUComponent>(EngineSU->LinkedClutch.GetComponent(EngineSU->GetOwner()));
 
 		if (const auto* MotorSU = Cast<USingularisMotorSUComponent>(PrimeMover))
-			return Cast<USingularisClutchSUComponent>(MotorSU->LinkedClutch.GetComponent(Owner));
+			return Cast<USingularisClutchSUComponent>(MotorSU->LinkedClutch.GetComponent(MotorSU->GetOwner()));
 
 		return nullptr;
 	};
@@ -621,7 +675,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (FirstClutchIndex == INDEX_NONE) FirstClutchIndex = ClutchIndex;
 
 		if (auto* TransSU = Cast<USingularisTransmissionSUComponent>(
-			ClutchSU->LinkedTransmission.GetComponent(Owner)
+			ClutchSU->LinkedTransmission.GetComponent(ClutchSU->GetOwner())
 		))
 		{
 			if (const int32 TransmissionIndex = AddEntity(TransSU, ClutchIndex);
@@ -689,7 +743,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (const auto* AxleSU = Cast<USingularisAxleSUComponent>(SUComp))
 		{
 			if (const int32* FoundIdx = TransmissionIndexByComponent.Find(
-				AxleSU->LinkedTransmission.GetComponent(Owner)
+				AxleSU->LinkedTransmission.GetComponent(AxleSU->GetOwner())
 			))
 				ParentIdx = *FoundIdx;
 		}
@@ -709,7 +763,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (const auto* WheelSU = Cast<USingularisWheelSUComponent>(SUComp))
 		{
 			if (const int32* FoundIdx = AxleIndexByComponent.Find(
-				WheelSU->LinkedAxle.GetComponent(Owner)
+				WheelSU->LinkedAxle.GetComponent(WheelSU->GetOwner())
 			))
 				ParentIdx = *FoundIdx;
 		}
@@ -719,7 +773,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 		WheelIndexByComponentKey.FindOrAdd(SUComp) = WheelIndex;
 		if (UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
-			SUComp->DrivenComponent.GetComponent(Owner)
+			SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
 		))
 			WheelIndexByComponent.FindOrAdd(ProxyComp) = WheelIndex;
 	}
@@ -733,7 +787,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		int32 ParentIdx = ChassisIndex;
 
 		if (UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
-			SUComp->DrivenComponent.GetComponent(Owner)
+			SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
 		))
 		{
 			if (const int32* FoundIdx = WheelIndexByComponent.Find(ProxyComp))
@@ -746,7 +800,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			for (const auto& Pair : WheelIndexByComponentKey)
 			{
 				const auto* WheelSU = Cast<USingularisWheelSUComponent>(Pair.Key.Get());
-				if (WheelSU && WheelSU->LinkedSuspension.GetComponent(Owner) == SUComp)
+				if (WheelSU && WheelSU->LinkedSuspension.GetComponent(WheelSU->GetOwner()) == SUComp)
 				{
 					ParentIdx = Pair.Value;
 					break;
@@ -995,6 +1049,12 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 		if (!ModuleOutput) continue;
 
 		const int32 Guid = ModuleOutput->ModuleGuid;
+
+		// 拓扑变更帧的在飞输出仍描述旧模块，其动画槽位索引会落在新模块的槽位上。
+		// 动画槽位的标志只增不减，错配的旧数据（尤其是悬挂位移）会被永久钉在新模块上，
+		// 表现为部件可视位姿被持续偏移。模块 GUID 全局唯一且永不复用，
+		// 故以「GUID 仍在本帧模块表中」为当前模块的判据（手动注册路径同样入表）
+		if (!GuidToCoreModule.Contains(Guid)) continue;
 
 		if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(Guid))
 		{
@@ -1443,6 +1503,10 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 			SchedulerSubsystem->UnregisterVehicleComponent(this);
 	}
 
+	// 1a) 物理状态销毁前固化模块积分状态：物理状态重建（OnCreatePhysicsState）后
+	//     新建模块延续车轮转角等积分量，避免重建瞬间的旋转突跳
+	CaptureModuleSimStates();
+
 	// 2) 未提交到物理线程的模块无其他所有者，在此终止并释放；
 	//    模块对象在终止回调中释放悬挂约束等外部资源，必须先于删除调用
 	for (const Chaos::FPendingModuleAdds& Pending : StoredTreeUpdates.GetNewModules())
@@ -1704,28 +1768,110 @@ void USingularisMorphVehicleSimulationComponent::UpdateNonSkeletalAnimations()
 		}
 		if (!ComponentToAnimate || !ComponentToAnimate->IsValidLowLevel()) continue;
 
-		FTransform NewRelativeTransform = ComponentToAnimate->GetRelativeTransform();
+		// 模块的静止基准与动画位移均表达在参考空间（集群联合/载具空间），
+		// 而驱动组件可位于其它 Actor（被停靠、动态生成的部件），其父空间与参考空间并不一致，
+		// 故先换算到参考空间叠加动画，再换算回父空间写入。
+		// 适配器缺失（手动注册路径）时以父组件为参考空间，模块变换即按调用方约定提供
+		const USceneComponent* AttachParent = ComponentToAnimate->GetAttachParent();
+		const FTransform ReferenceTransform = PhysicsAdapter
+			                                      ? PhysicsAdapter->GetReferenceTransform()
+			                                      : (AttachParent
+				                                         ? AttachParent->GetComponentTransform()
+				                                         : FTransform::Identity);
+
+		// 1) 以部件当前变换为基准（未参与动画的通道保持现状），叠加动画数据
+		FTransform TargetTransform = ComponentToAnimate->GetComponentTransform().GetRelativeTransform(
+			ReferenceTransform
+		);
 
 		if (AnimSetup.AnimFlags & Chaos::EAnimationFlags::AnimateRotation)
 		{
-			NewRelativeTransform.SetRotation(
+			TargetTransform.SetRotation(
 				AnimSetup.InitialRotOffset * AnimSetup.CombinedRotation
 			);
 		}
 		if (AnimSetup.AnimFlags & Chaos::EAnimationFlags::AnimatePosition)
 		{
-			NewRelativeTransform.SetLocation(
+			TargetTransform.SetLocation(
 				AnimSetup.InitialLocOffset + AnimSetup.LocOffset
 			);
 		}
 
+		// 2) 参考空间 → 父空间：父组件即参考组件时该换算退化为单位变换
+		const FTransform ReferenceToParent = AttachParent
+			                                     ? ReferenceTransform.GetRelativeTransform(
+				                                     AttachParent->GetComponentTransform()
+				                                     )
+			                                     : ReferenceTransform;
+
 		ComponentToAnimate->SetRelativeTransform(
-			NewRelativeTransform,
+			TargetTransform * ReferenceToParent,
 			false,
 			nullptr,
 			ETeleportType::TeleportPhysics
 		);
 	}
+}
+
+void USingularisMorphVehicleSimulationComponent::CaptureModuleSimStates()
+{
+	// 采集各模块的积分状态（车轮转角/转速、挡位、离合器、悬挂压缩）：
+	// 模块在拓扑重建中被销毁并按几何重新创建，而这些积分量不随几何重算，
+	// 不转移则每次增删部件都归零——表现为行驶中已有车轮旋转突跳（转角归零）、
+	// 掉挡与动力中断；悬挂压缩量一并转移，避免重建首帧的阻尼冲击。
+	// 未提供网络数据的模块（底盘、翼型、轮轴、电机等）不参与转移，保持无状态语义
+	for (const auto& Pair : ComponentToPhysicsObjects)
+	{
+		auto* SUComp = Cast<USingularisMorphVehicleSUComponent>(Pair.Key.Get());
+		if (!SUComp) continue;
+
+		Chaos::ISimulationModuleBase* const* Found = GuidToCoreModule.Find(Pair.Value.Guid);
+		if (!Found || !*Found) continue;
+
+		TSharedPtr<Chaos::FModuleNetData> ModuleState = (*Found)->GenerateNetData((*Found)->GetTreeIndex());
+		if (!ModuleState) continue;
+
+		ModuleState->FillNetState(*Found);
+		SUComp->SetModuleSimState(MoveTemp(ModuleState));
+	}
+}
+
+const FSingularisMorphModuleRestPose& USingularisMorphVehicleSimulationComponent::AcquireModuleRestPose(
+	UPrimitiveComponent* Component,
+	const int32 ParticleIndex,
+	const FTransform& RestTransform,
+	const FTransform& ComponentTransform
+)
+{
+	const FSingularisMorphModuleRestPoseKey Key{Component, ParticleIndex};
+
+	// 已捕获的基准直接复用：重建读到的 ChildToParent 已含引擎写回的动画位移，
+	// 重新捕获会把当帧姿态固化为新基准，逐次重建累积为可视轮位与悬挂行程漂移
+	if (const FSingularisMorphModuleRestPose* Existing = ModuleRestPoses.Find(Key))
+		return *Existing;
+
+	FSingularisMorphModuleRestPose& Added = ModuleRestPoses.Add(Key);
+	Added.RestTransform = RestTransform;
+	Added.ComponentTransform = ComponentTransform;
+
+	return Added;
+}
+
+void USingularisMorphVehicleSimulationComponent::PruneModuleRestPoses(
+	const TSet<FSingularisMorphModuleRestPoseKey>& LiveKeys
+)
+{
+	if (ModuleRestPoses.IsEmpty()) return;
+
+	TArray<FSingularisMorphModuleRestPoseKey> StaleKeys;
+	for (const auto& Pair : ModuleRestPoses)
+	{
+		if (!LiveKeys.Contains(Pair.Key))
+			StaleKeys.Add(Pair.Key);
+	}
+
+	for (const FSingularisMorphModuleRestPoseKey& Key : StaleKeys)
+		ModuleRestPoses.Remove(Key);
 }
 
 Chaos::FSimOutputData* USingularisMorphVehicleSimulationComponent::FindModuleOutputFromGuid(
@@ -1794,7 +1940,9 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 	CoreModule->SetTransformIndex(TransformIndex);
 	CoreModule->SetParticleIndex(ParticleIndex);
 
-	// 5) 设置物理变换（来自集群子粒子的 ChildToParent，不含编辑器偏移）
+	// 5) 设置物理变换（模块静止基准，不含编辑器偏移）。
+	//    以单位变换作「未提供」哨兵：部件恰位于集群原点时会被判为未提供并退回相对组件变换。
+	//    该判定在重复重建间结果一致，不产生累积漂移
 	const FTransform PhysTransform = PhysicalTransform.Equals(FTransform::Identity)
 		                                 ? ComponentTransform
 		                                 : PhysicalTransform;
