@@ -61,6 +61,11 @@ FSingularisMorphVehicleSuspensionSimModule::FSingularisMorphVehicleSuspensionSim
 	  SpringSpeed(0.f)
 {
 	AccessSetup().MaxLength = FMath::Abs(Settings.MaxRaise + Settings.MaxDrop);
+
+	// 初始状态 = 安放点（位移 MaxDrop 处，轮心与组件位置重合）：
+	// 出生与动态加装时轮胎直接出现在安放点，无瞬移；落地首帧几何值与静态一致，无跳变
+	SpringDisplacement = FMath::Clamp(Settings.MaxDrop, 0.f, AccessSetup().MaxLength);
+	LastDisplacement = SpringDisplacement;
 }
 
 FSingularisMorphVehicleSuspensionSimModule::~FSingularisMorphVehicleSuspensionSimModule() {}
@@ -99,9 +104,8 @@ void FSingularisMorphVehicleSuspensionSimModule::GetWorldTraceEndpoints(
 		MovementExpansion += WorldDirection * (Amount * DeltaSeconds / CurrentTimeDilation);
 	}
 
-	// 锚点即舒展态轮心位：探测范围 = [全压缩点（锚点上方 MaxLength），舒展点 + 轮半径]
-	OutTrace.Start = WorldLocation - WorldDirection * Setup().MaxLength;
-	OutTrace.End = WorldLocation + WorldDirection * WheelRadius + MovementExpansion;
+	OutTrace.Start = WorldLocation - WorldDirection * Setup().MaxRaise;
+	OutTrace.End = WorldLocation + WorldDirection * (Setup().MaxDrop + WheelRadius) + MovementExpansion;
 }
 
 void FSingularisMorphVehicleSuspensionSimModule::OnConstruction_External(const FPhysicsObjectHandle& PhysicsObject)
@@ -126,9 +130,15 @@ void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 	CurrentTimeDilation = FMath::Max(Inputs.CurrentTimeDilation, SMALL_NUMBER);
 	const float ClampedDT = FMath::Max(DeltaTime, SMALL_NUMBER);
 
-	if (IsWheelInContact())
+	// 真实触地判据：射线命中且地面已达安放态轮底（几何位移 ≥ MaxDrop）。
+	// 命中但间隙未消除（地面在安放态轮底之下）按空中处理：直接采纳几何值会让
+	// 车轮瞬移下探远端地面——接近地面时瞬移落地、离地时先下探再猛弹回的根源。
+	// 首触时几何位移 == MaxDrop，与安放点重合，连续无跳变
+	const bool bTouching = IsWheelInContact() && GeometricDisplacement >= Setup().MaxDrop;
+
+	if (bTouching)
 	{
-		// 接触：地面钳制车轮，位移由几何决定；
+		// 触地：地面钳制车轮，位移由几何决定；
 		// 速度取几何变化率，作为离地瞬间动力学积分的初速度
 		SpringDisplacement = GeometricDisplacement;
 		DisplacementVelocity = FMath::Clamp(
@@ -137,17 +147,19 @@ void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 	else
 	{
 		// 空中：虚拟轮质量 + 弹簧 + 阻尼一维积分，舒展有过程而非瞬时跳变。
-		// 沿压缩方向（位移增大为正）：弹簧与预载推向舒展（负方向），阻尼抵抗运动
+		// 视觉舒展位 = 安放点（位移 MaxDrop 处，轮心与组件位置重合）：
+		// 弹簧把轮心拉回安放点，沿压缩方向（位移增大为正），AboveRest 为距安放点的距离
 		const float Mass = FMath::Max(Setup().VirtualWheelMassKg, 1.0f);
-		const float ExtensionForce = Setup().SpringRate * SpringDisplacement + Setup().SpringPreload;
+		const float AboveRest = SpringDisplacement - Setup().MaxDrop;
+		const float ExtensionForce = Setup().SpringRate * AboveRest + Setup().SpringPreload;
 		const float Accel = -(ExtensionForce + Setup().SpringDamping * DisplacementVelocity) / Mass;
 		DisplacementVelocity += Accel * ClampedDT;
 		SpringDisplacement += DisplacementVelocity * ClampedDT;
 
-		// 行程硬限位：0 = 舒展态（安放点），MaxLength = 全压缩
-		if (SpringDisplacement <= 0.f)
+		// 视觉行程限位：下限 = 安放点（MaxDrop），上限 = 全压缩（MaxLength）
+		if (SpringDisplacement <= Setup().MaxDrop)
 		{
-			SpringDisplacement = 0.f;
+			SpringDisplacement = Setup().MaxDrop;
 			DisplacementVelocity = FMath::Max(DisplacementVelocity, 0.f);
 		}
 		else if (SpringDisplacement >= Setup().MaxLength)
@@ -161,11 +173,13 @@ void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 	SpringSpeed = -DisplacementVelocity;
 	LastDisplacement = SpringDisplacement;
 
-	// 载荷与车体力仅在接触时输出：空中舒展过程不产生抓地力与支撑力
+	// 载荷沿用原版语义：跟随几何位移、射线命中即输出。
+	// 间隙阶段载荷随几何值渐进（与原版一致，落地渐进、停放抓地连续无死区），
+	// 空中不输出；解析力仅在约束创建失败时兜底车体
 	float ForceIntoSurface = 0.0f;
-	if (IsWheelInContact() && SpringDisplacement > 0.f)
+	if (IsWheelInContact() && GeometricDisplacement > 0.f)
 	{
-		const float StiffnessForce = SpringDisplacement * Setup().SpringRate;
+		const float StiffnessForce = GeometricDisplacement * Setup().SpringRate;
 		const float DampingForce = SpringSpeed * Setup().SpringDamping;
 		const float SuspensionForce = StiffnessForce - DampingForce;
 		if (SuspensionForce > 0.f)
@@ -193,9 +207,9 @@ void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 
 void FSingularisMorphVehicleSuspensionSimModule::Animate()
 {
-	// 零偏移点 = 舒展态（SpringDisplacement == 0）：安放点即轮胎静止位，压缩量直接映射为向上偏移，
-	// 全压缩时向上 MaxLength。与 FillOutputState 的 SpringDisplacementVector 语义一致
-	FVector Movement = -Setup().SuspensionAxis * SpringDisplacement;
+	// 零偏移点 = 安放点（位移 MaxDrop，轮心与组件位置重合）：
+	// 等价于 up×(SpringDisplacement − MaxDrop)，接触时即地面真值，悬空时收敛到安放点
+	FVector Movement = -Setup().SuspensionAxis * (Setup().MaxRaise + GetSpringLength());
 
 	AnimationData.AnimFlags = EAnimationFlags::AnimatePosition;
 	AnimationData.AnimationLocOffset = Movement;
@@ -235,10 +249,7 @@ void FSingularisMorphVehicleSuspensionSimModule::CreateConstraint(const FPhysics
 	// 幂等：已持有约束时不重建，否则重复构建会让旧约束失去句柄而永久残留
 	if (ConstraintHandle.IsValid()) return;
 
-	// 锚点上移 MaxDrop 回中性点：约束窗口 [−MaxRaise, +MaxDrop] 围绕中性点设计，
-	// 安放点语义改为舒展态后窗口不动，物理行为与旧版一致
-	const FVector LocalOffset =
-		GetInitialParticleTransform().GetLocation() - Setup().SuspensionAxis * Setup().MaxDrop;
+	const FVector& LocalOffset = GetInitialParticleTransform().GetLocation();
 
 	if (auto Scene = FPhysicsObjectExternalInterface::GetScene({&PhysicsObject, 1}))
 	{
@@ -283,17 +294,23 @@ void FSingularisMorphVehicleSuspensionSimModule::DestroyConstraint()
 	// 幂等：约束从未创建或已释放时句柄无效，对无效句柄下命令会命中未初始化内存
 	if (!ConstraintHandle.IsValid()) return;
 
-	// 释放后立即失效句柄，避免重复终止回调对同一约束二次释放。
-	// ReleaseConstraint 要求非 const 句柄，故直接作用于成员
+	// 按值捕获句柄：释放命令可能被延迟到物理线程执行（本插件对集群根的其它写入
+	// 均走 Solver->EnqueueCommandImmediate，同理），届时模块对象可能已被删除；
+	// 若 lambda 读取成员，既可能拿到下方已复位的空句柄（真实约束泄漏为幻影弹簧，
+	// 持续按陈旧目标对车体施力，表现为加装越多车越高、随机大幅抖动），
+	// 也可能悬空访问已删除模块的成员
+	FPhysicsConstraintHandle HandleToRelease = ConstraintHandle;
+
+	// 先复位成员再下发命令：命令只携带句柄副本，重复终止回调被幂等挡下
+	ConstraintHandle = FPhysicsConstraintHandle();
+
 	FPhysicsCommand::ExecuteWrite(
-		ConstraintHandle,
-		[this](const FPhysicsConstraintHandle&)
+		HandleToRelease,
+		[HandleToRelease](const FPhysicsConstraintHandle&)
 		{
-			FPhysicsInterface::ReleaseConstraint(ConstraintHandle);
+			FPhysicsInterface::ReleaseConstraint(HandleToRelease);
 		}
 	);
-
-	ConstraintHandle = FPhysicsConstraintHandle();
 }
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
@@ -363,15 +380,18 @@ void FSingularisMorphSuspensionOutputData::GetFinalAnimDataGameThread(
 
 	FVector WorldLocation = NewTransform.TransformPosition(ModuleLocalPosition);
 	FVector WorldDirection = NewTransform.TransformVector(LocalSuspensionAxis);
-	FVector NewStart = WorldLocation - WorldDirection * (MaxDrop + MaxRaise);
+	FVector NewStart = WorldLocation - WorldDirection * MaxRaise;
 	FVector NewEnd = ImpactPosition;
 	float Length = FVector::DotProduct(NewStart - NewEnd, WorldDirection);
 	Length = FMath::Clamp(Length, -(MaxDrop + MaxRaise), 0);
-	FVector Movement = -LocalSuspensionAxis * (Length + MaxDrop + MaxRaise);
+	FVector Movement = -LocalSuspensionAxis * (Length + MaxRaise);
 
-	// 无命中：使用动力学积分的位移，舒展有过程；零偏移点 = 舒展态安放点
-	if (!bWheelHit)
-		Movement = -LocalSuspensionAxis * SpringDisplacement;
+	// 真实触地（命中且 Length ≥ −MaxRaise，地面已达安放态轮底）才按几何重算，
+	// 与物理线程 Animate 的触地映射逐点一致；命中但间隙未消除、或无命中时，
+	// 使用动力学积分位移——车轮保持在安放点，不瞬移下探远端地面
+	const bool bTrueTouch = bWheelHit && Length >= -MaxRaise;
+	if (!bTrueTouch)
+		Movement = -LocalSuspensionAxis * (SpringDisplacement - MaxDrop);
 
 	AnimDataOut.AnimFlags = EAnimationFlags::AnimatePosition;
 	AnimDataOut.AnimationLocOffset = Movement;
