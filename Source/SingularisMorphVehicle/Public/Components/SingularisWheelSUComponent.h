@@ -37,7 +37,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元",
+		Category = "引力奇点车轮仿真单元组件",
 		meta = (
 			DisplayName = "链接悬挂",
 			UseComponentPicker,
@@ -50,7 +50,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元",
+		Category = "引力奇点车轮仿真单元组件",
 		meta = (
 			DisplayName = "链接轮轴",
 			UseComponentPicker,
@@ -63,7 +63,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮仿真单元组件|几何",
 		meta = (DisplayName = "车轮半径")
 	)
 	float WheelRadius = 30.0f;
@@ -72,7 +72,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮仿真单元组件|几何",
 		meta = (DisplayName = "车轮宽度")
 	)
 	float WheelWidth = 20.0f;
@@ -81,7 +81,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮仿真单元组件|几何",
 		meta = (DisplayName = "轴向类型")
 	)
 	ESingularisMorphVehicleWheelAxisType AxisType = ESingularisMorphVehicleWheelAxisType::X;
@@ -90,7 +90,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮仿真单元组件|几何",
 		meta = (DisplayName = "车轮惯性")
 	)
 	float WheelInertia = 10.0f;
@@ -99,7 +99,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮仿真单元组件|几何",
 		meta = (DisplayName = "最大旋转角速度")
 	)
 	float MaxRotationVel = 100.0f;
@@ -108,7 +108,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮仿真单元组件|摩擦",
 		meta = (DisplayName = "摩擦倍率")
 	)
 	float FrictionMultiplier = 2.0f;
@@ -117,7 +117,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮仿真单元组件|摩擦",
 		meta = (DisplayName = "侧滑图倍率")
 	)
 	float LateralSlipGraphMultiplier = 1.0f;
@@ -126,7 +126,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮仿真单元组件|摩擦",
 		meta = (DisplayName = "侧偏刚度")
 	)
 	float CorneringStiffness = 1000.0f;
@@ -135,7 +135,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮仿真单元组件|摩擦",
 		meta = (DisplayName = "侧滑图")
 	)
 	TArray<FVector2D> LateralSlipGraph{};
@@ -144,7 +144,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮仿真单元组件|摩擦",
 		meta = (DisplayName = "侧滑角上限")
 	)
 	float SlipAngleLimit = 8.0f;
@@ -153,7 +153,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮仿真单元组件|摩擦",
 		meta = (DisplayName = "打滑衰减")
 	)
 	float SlipModifier = 0.9f;
@@ -162,7 +162,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|辅助",
+		Category = "引力奇点车轮仿真单元组件|辅助",
 		meta = (DisplayName = "启用ABS")
 	)
 	bool bABSEnabled = true;
@@ -171,7 +171,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|辅助",
+		Category = "引力奇点车轮仿真单元组件|辅助",
 		meta = (DisplayName = "启用牵引力控制")
 	)
 	bool bTractionControlEnabled = true;
@@ -180,7 +180,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮仿真单元组件|制动",
 		meta = (DisplayName = "最大制动扭矩")
 	)
 	float MaxBrakeTorque = 2000.0f;
@@ -189,7 +189,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮仿真单元组件|制动",
 		meta = (DisplayName = "启用手刹")
 	)
 	bool bHandbrakeEnabled = false;
@@ -198,7 +198,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮仿真单元组件|制动",
 		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled")
 	)
 	float HandbrakeTorque = 2000.0f;
@@ -207,7 +207,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮仿真单元组件|制动",
 		meta = (DisplayName = "启用自动手刹")
 	)
 	bool bAutoHandbrakeEnabled = false;
@@ -216,7 +216,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮仿真单元组件|制动",
 		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled")
 	)
 	float AutoHandbrakeVelocityThreshold = 10.0f;
@@ -225,7 +225,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|转向",
+		Category = "引力奇点车轮仿真单元组件|转向",
 		meta = (DisplayName = "启用转向")
 	)
 	bool bSteeringEnabled = false;
@@ -234,7 +234,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|转向",
+		Category = "引力奇点车轮仿真单元组件|转向",
 		meta = (DisplayName = "最大转向角度", EditCondition = "bSteeringEnabled")
 	)
 	float MaxSteeringAngle = 35.0f;
@@ -243,7 +243,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|偏移",
+		Category = "引力奇点车轮仿真单元组件|偏移",
 		meta = (DisplayName = "力偏移")
 	)
 	FVector ForceOffset = FVector::ZeroVector;
@@ -252,7 +252,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|偏移",
+		Category = "引力奇点车轮仿真单元组件|偏移",
 		meta = (DisplayName = "反转方向")
 	)
 	bool ReverseDirection = false;
@@ -262,15 +262,15 @@ public:
 #pragma region 事件分发器
 
 	/** 快速（低开销）原生版本的车轮触地变化委托 */
-	FOnWheelTouchChangeNative OnWheelTouchChangeNativeEvent;
+	FOnWheelTouchChangeNative OnWheelTouchChangeNativeEvent{};
 
 	/** 蓝图表单的车轮触地变化事件 */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "SingularisMorphVehicle|引力奇点车轮仿真单元|事件分发器",
+		Category = "引力奇点车轮仿真单元组件|事件分发器",
 		meta = (DisplayName = "触地变化")
 	)
-	FOnWheelTouchChange OnWheelTouchChangeEvent;
+	FOnWheelTouchChange OnWheelTouchChangeEvent{};
 
 #pragma endregion
 

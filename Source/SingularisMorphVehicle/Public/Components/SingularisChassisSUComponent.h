@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点底盘仿真单元|阻力",
+		Category = "引力奇点底盘仿真单元组件",
 		meta = (DisplayName = "迎风面积")
 	)
 	float AreaMetresSquared = 0.0f;
@@ -38,7 +38,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点底盘仿真单元|阻力",
+		Category = "引力奇点底盘仿真单元组件",
 		meta = (DisplayName = "阻力系数")
 	)
 	float DragCoefficient = 0.5f;
@@ -47,7 +47,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点底盘仿真单元|阻力",
+		Category = "引力奇点底盘仿真单元组件",
 		meta = (DisplayName = "介质密度")
 	)
 	float DensityOfMedium = Chaos::RealWorldConsts::AirDensity();
@@ -56,7 +56,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点底盘仿真单元|阻力",
+		Category = "引力奇点底盘仿真单元组件",
 		meta = (DisplayName = "X轴倍率")
 	)
 	float XAxisMultiplier = 1.0f;
@@ -65,7 +65,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点底盘仿真单元|阻力",
+		Category = "引力奇点底盘仿真单元组件",
 		meta = (DisplayName = "Y轴倍率")
 	)
 	float YAxisMultiplier = 1.0f;
@@ -74,7 +74,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点底盘仿真单元|阻尼",
+		Category = "引力奇点底盘仿真单元组件",
 		meta = (DisplayName = "角阻尼")
 	)
 	float AngularDamping = 0.0f;

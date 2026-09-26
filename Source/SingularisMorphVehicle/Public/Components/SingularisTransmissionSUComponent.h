@@ -36,7 +36,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|齿轮比",
+		Category = "引力奇点变速箱仿真单元组件|齿轮比",
 		meta = (DisplayName = "前进挡比")
 	)
 	TArray<float> ForwardRatios = {2.85f, 2.02f, 1.35f, 1.0f};
@@ -45,7 +45,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|齿轮比",
+		Category = "引力奇点变速箱仿真单元组件|齿轮比",
 		meta = (DisplayName = "倒挡比")
 	)
 	TArray<float> ReverseRatios = {2.86f};
@@ -54,7 +54,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|齿轮比",
+		Category = "引力奇点变速箱仿真单元组件|齿轮比",
 		meta = (DisplayName = "主减速比")
 	)
 	float FinalDriveRatio = 3.08f;
@@ -63,7 +63,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|换挡",
+		Category = "引力奇点变速箱仿真单元组件|换挡",
 		meta = (DisplayName = "升挡 RPM")
 	)
 	int32 ChangeUpRPM = 4500;
@@ -72,7 +72,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|换挡",
+		Category = "引力奇点变速箱仿真单元组件|换挡",
 		meta = (DisplayName = "降挡 RPM")
 	)
 	int32 ChangeDownRPM = 1600;
@@ -81,7 +81,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|换挡",
+		Category = "引力奇点变速箱仿真单元组件|换挡",
 		meta = (DisplayName = "换挡时间")
 	)
 	float GearChangeTime = 0.5f;
@@ -90,7 +90,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|换挡",
+		Category = "引力奇点变速箱仿真单元组件|换挡",
 		meta = (DisplayName = "滞后时间")
 	)
 	float GearHysteresisTime = 2.0f;
@@ -99,7 +99,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|传动",
+		Category = "引力奇点变速箱仿真单元组件|传动",
 		meta = (DisplayName = "传动效率")
 	)
 	float TransmissionEfficiency = 0.9f;
@@ -108,7 +108,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|传动",
+		Category = "引力奇点变速箱仿真单元组件|传动",
 		meta = (DisplayName = "变速箱类型")
 	)
 	ESingularisMorphVehicleTransmissionType TransmissionType = ESingularisMorphVehicleTransmissionType::Automatic;
@@ -117,7 +117,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|传动",
+		Category = "引力奇点变速箱仿真单元组件|传动",
 		meta = (DisplayName = "自动倒挡")
 	)
 	bool AutoReverse = true;
@@ -127,12 +127,12 @@ public:
 #pragma region 事件分发器
 
 	/** 快速（低开销）原生版本的换挡委托 */
-	FOnGearChangeNative OnGearChangeNativeEvent;
+	FOnGearChangeNative OnGearChangeNativeEvent{};
 
 	/** 蓝图表单的换挡事件 */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "SingularisMorphVehicle|引力奇点变速箱仿真单元|事件分发器",
+		Category = "引力奇点变速箱仿真单元组件|事件分发器",
 		meta = (DisplayName = "挡位变化")
 	)
 	FOnGearChange OnGearChangeEvent{};

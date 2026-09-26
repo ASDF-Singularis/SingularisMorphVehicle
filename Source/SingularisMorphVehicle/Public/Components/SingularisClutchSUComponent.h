@@ -24,20 +24,11 @@ class SINGULARISMORPHVEHICLE_API USingularisClutchSUComponent : public USingular
 public:
 #pragma region Parameter
 
-	/** 离合器接合强度（线性传递系数，1 = 完全接合直传扭矩） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点离合器仿真单元|参数",
-		meta = (DisplayName = "离合器强度")
-	)
-	float ClutchStrength = 1.0f;
-
 	/** 链接的变速箱组件（单向引用） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点离合器仿真单元|链接",
+		Category = "引力奇点离合器仿真单元组件",
 		meta = (
 			DisplayName = "链接变速箱",
 			UseComponentPicker,
@@ -45,6 +36,15 @@ public:
 		)
 	)
 	FComponentReference LinkedTransmission{};
+
+	/** 离合器接合强度（线性传递系数，1 = 完全接合直传扭矩） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点离合器仿真单元组件",
+		meta = (DisplayName = "离合器强度")
+	)
+	float ClutchStrength = 1.0f;
 
 #pragma endregion
 

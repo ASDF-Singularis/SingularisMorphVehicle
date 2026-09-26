@@ -25,20 +25,11 @@ class SINGULARISMORPHVEHICLE_API USingularisAxleSUComponent : public USingularis
 public:
 #pragma region Parameter
 
-	/** 轮轴惯性（kg·m²） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点轮轴仿真单元|动力学",
-		meta = (DisplayName = "轮轴惯性")
-	)
-	float AxleInertia = 1.0f;
-
 	/** 链接的变速箱组件（单向引用，声明后轮轴的扭矩父节点为该变速箱） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点轮轴仿真单元|链接",
+		Category = "引力奇点轮轴仿真单元组件",
 		meta = (
 			DisplayName = "链接变速箱",
 			UseComponentPicker,
@@ -46,6 +37,15 @@ public:
 		)
 	)
 	FComponentReference LinkedTransmission{};
+
+	/** 轮轴惯性（kg·m²） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点轮轴仿真单元组件",
+		meta = (DisplayName = "轮轴惯性")
+	)
+	float AxleInertia = 1.0f;
 
 #pragma endregion
 

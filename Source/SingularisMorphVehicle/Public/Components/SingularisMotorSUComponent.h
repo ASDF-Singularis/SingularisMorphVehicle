@@ -26,11 +26,24 @@ class SINGULARISMORPHVEHICLE_API USingularisMotorSUComponent : public USingulari
 public:
 #pragma region Parameter
 
+	/** 链接的离合器组件（单向引用，声明后电机的扭矩下游为该离合器） */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点电机仿真单元组件",
+		meta = (
+			DisplayName = "链接离合器",
+			UseComponentPicker,
+			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisClutchSUComponent"
+		)
+	)
+	FComponentReference LinkedClutch{};
+
 	/** 峰值扭矩（牛顿·米） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点电机仿真单元|扭矩",
+		Category = "引力奇点电机仿真单元组件",
 		meta = (DisplayName = "最大扭矩")
 	)
 	float MaxTorque = 200.0f;
@@ -39,7 +52,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点电机仿真单元|转速",
+		Category = "引力奇点电机仿真单元组件",
 		meta = (DisplayName = "最大RPM")
 	)
 	float MaxRPM = 6000.0f;
@@ -48,23 +61,10 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点电机仿真单元|动力学",
+		Category = "引力奇点电机仿真单元组件",
 		meta = (DisplayName = "电机惯性")
 	)
 	float EngineInertia = 100.0f;
-
-	/** 链接的离合器组件（单向引用，声明后电机的扭矩下游为该离合器） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点电机仿真单元|链接",
-		meta = (
-			DisplayName = "链接离合器",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisClutchSUComponent"
-		)
-	)
-	FComponentReference LinkedClutch{};
 
 #pragma endregion
 

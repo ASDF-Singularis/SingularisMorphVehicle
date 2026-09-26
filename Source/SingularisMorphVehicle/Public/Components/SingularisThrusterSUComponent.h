@@ -28,7 +28,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|推力",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "最大推进力")
 	)
 	float MaxThrustForce = 10000.0f;
@@ -37,7 +37,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|推力",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "力轴")
 	)
 	FVector ForceAxis = FVector(1.0f, 0.0f, 0.0f);
@@ -46,7 +46,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|推力",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "力偏移")
 	)
 	FVector ForceOffset = FVector::ZeroVector;
@@ -55,7 +55,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|推力",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "推力倍率效应")
 	)
 	float BoostMultiplierEffect = 2.0f;
@@ -64,7 +64,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|转向",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "启用转向")
 	)
 	bool bSteeringEnabled = false;
@@ -73,7 +73,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|转向",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "转向轴")
 	)
 	FVector SteeringAxis = FVector(0.0f, 0.0f, 1.0f);
@@ -82,7 +82,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|转向",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "最大转向角度")
 	)
 	float MaxSteeringAngle = 0.0f;
@@ -91,7 +91,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点推进器仿真单元|转向",
+		Category = "引力奇点推进器仿真单元组件",
 		meta = (DisplayName = "转向力效应")
 	)
 	float SteeringForceEffect = 0.5f;

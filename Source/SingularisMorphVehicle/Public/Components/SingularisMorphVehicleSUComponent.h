@@ -27,7 +27,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		Category = "引力奇点基础仿真单元组件",
 		meta = (DisplayName = "启用动画")
 	)
 	bool bAnimationEnabled = false;
@@ -36,7 +36,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		Category = "引力奇点基础仿真单元组件",
 		meta = (DisplayName = "骨骼名称", EditCondition = "bAnimationEnabled")
 	)
 	FName BoneName = NAME_None;
@@ -45,7 +45,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		Category = "引力奇点基础仿真单元组件",
 		meta = (DisplayName = "输入配置")
 	)
 	TArray<FModuleInputSetup> InputConfig{};
@@ -54,7 +54,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		Category = "引力奇点基础仿真单元组件",
 		meta = (DisplayName = "动画偏移", EditCondition = "bAnimationEnabled")
 	)
 	FVector AnimationOffset = FVector::ZeroVector;
@@ -63,7 +63,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		Category = "引力奇点基础仿真单元组件",
 		meta = (DisplayName = "变换偏移")
 	)
 	FTransform TransformOffset = FTransform::Identity;
@@ -72,7 +72,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "SingularisMorphVehicle|引力奇点基础仿真单元",
+		Category = "引力奇点基础仿真单元组件",
 		meta = (DisplayName = "驱动组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
 	)
 	FComponentReference DrivenComponent{};
