@@ -24,7 +24,7 @@ class SINGULARISMORPHVEHICLE_API USingularisClutchSUComponent : public USingular
 public:
 #pragma region Parameter
 
-	/** 离合器接合强度 */
+	/** 离合器接合强度（线性传递系数，1 = 完全接合直传扭矩） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
