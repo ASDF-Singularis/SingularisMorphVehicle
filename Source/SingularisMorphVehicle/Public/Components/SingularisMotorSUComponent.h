@@ -30,7 +30,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元组件",
+		Category = "引力奇点电机仿真单元",
 		meta = (
 			DisplayName = "链接离合器",
 			UseComponentPicker,
@@ -43,7 +43,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元组件",
+		Category = "引力奇点电机仿真单元",
 		meta = (DisplayName = "最大扭矩")
 	)
 	float MaxTorque = 200.0f;
@@ -52,7 +52,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元组件",
+		Category = "引力奇点电机仿真单元",
 		meta = (DisplayName = "最大RPM")
 	)
 	float MaxRPM = 6000.0f;
@@ -61,7 +61,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元组件",
+		Category = "引力奇点电机仿真单元",
 		meta = (DisplayName = "电机惯性")
 	)
 	float EngineInertia = 100.0f;

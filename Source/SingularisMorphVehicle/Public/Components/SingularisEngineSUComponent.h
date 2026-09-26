@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|链接",
+		Category = "引力奇点引擎仿真单元|链接",
 		meta = (
 			DisplayName = "链接离合器",
 			UseComponentPicker,
@@ -42,7 +42,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|扭矩",
+		Category = "引力奇点引擎仿真单元|扭矩",
 		meta = (DisplayName = "扭矩曲线")
 	)
 	FRuntimeFloatCurve TorqueCurve{};
@@ -51,7 +51,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|扭矩",
+		Category = "引力奇点引擎仿真单元|扭矩",
 		meta = (DisplayName = "最大扭矩")
 	)
 	float MaxTorque = 200.0f;
@@ -60,7 +60,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|转速",
+		Category = "引力奇点引擎仿真单元|转速",
 		meta = (DisplayName = "最大RPM")
 	)
 	int32 MaxRPM = 5000;
@@ -69,7 +69,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|转速",
+		Category = "引力奇点引擎仿真单元|转速",
 		meta = (DisplayName = "怠速RPM")
 	)
 	int32 EngineIdleRPM = 1200;
@@ -78,7 +78,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|动力学",
+		Category = "引力奇点引擎仿真单元|动力学",
 		meta = (DisplayName = "引擎制动效应")
 	)
 	float EngineBrakeEffect = 150.0f;
@@ -87,7 +87,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元组件|动力学",
+		Category = "引力奇点引擎仿真单元|动力学",
 		meta = (DisplayName = "引擎惯性")
 	)
 	float EngineInertia = 1000.0f;

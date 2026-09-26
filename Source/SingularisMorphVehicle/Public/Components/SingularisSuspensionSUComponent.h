@@ -28,7 +28,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "悬挂轴")
 	)
 	FVector SuspensionAxis = FVector(0, 0, -1);
@@ -37,7 +37,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "悬挂最大上升")
 	)
 	float SuspensionMaxRaise = 10.0f;
@@ -46,7 +46,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "悬挂最大下降")
 	)
 	float SuspensionMaxDrop = 30.0f;
@@ -55,7 +55,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "弹簧劲度")
 	)
 	float SpringRate = 200.0f;
@@ -64,7 +64,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "弹簧预载")
 	)
 	float SpringPreload = 50.0f;
@@ -73,7 +73,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "弹簧阻尼")
 	)
 	float SpringDamping = 0.9f;
@@ -82,7 +82,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元组件",
+		Category = "引力奇点悬挂仿真单元",
 		meta = (DisplayName = "悬挂力效应")
 	)
 	float SuspensionForceEffect = 100.0f;

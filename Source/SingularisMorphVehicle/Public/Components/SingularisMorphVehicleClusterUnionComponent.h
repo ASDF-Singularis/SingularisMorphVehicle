@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "SingularisMorphVehicle|引力奇点变型载具集群联合组件|参数",
+		Category = "引力奇点变型载具集群联合|参数",
 		meta = (DisplayName = "Sockets")
 	)
 	TArray<FSingularisMorphVehicleSocket> Sockets{};

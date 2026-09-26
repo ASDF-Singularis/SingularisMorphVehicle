@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点轮轴仿真单元组件",
+		Category = "引力奇点轮轴仿真单元",
 		meta = (
 			DisplayName = "链接变速箱",
 			UseComponentPicker,
@@ -42,7 +42,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点轮轴仿真单元组件",
+		Category = "引力奇点轮轴仿真单元",
 		meta = (DisplayName = "轮轴惯性")
 	)
 	float AxleInertia = 1.0f;
