@@ -32,7 +32,16 @@ public:
 		FModuleInputContainer& InOutContainer
 	) override;
 
+	/** 已捕获的输入缓冲（BufferInput 合并写入，ProduceInput 拷出并清零） */
 	FModuleInputContainer MergedInput;
+
+	/**
+	 * 生产者的输入名映射副本。
+	 *
+	 * 容器重建时需按名称回填已捕获的输入，而调用方传入的名映射在重建前后不同，
+	 * 故生产者自持一份，使回填不依赖调用方的调用顺序。
+	 */
+	FInputNameMap InputNameMap;
 };
 
 /**
@@ -70,6 +79,9 @@ public:
 
 	TArray<FModuleInputContainer> PlaybackBuffer;
 	int32 BufferLength = 150;
+
+	/** 回放缓冲的随机生成种子（固定值以保证回放可重现） */
+	int32 PlaybackSeed = 123;
 };
 
 /**
@@ -102,8 +114,10 @@ public:
 	) override;
 
 	FModuleInputContainer PlaybackContainer;
+
+	/** 输入变化周期（帧）：每经过该帧数换一组随机控制量 */
 	int32 ChangeInputFrequency = 10;
 
-	/** 每个实例独立的随机流，避免多个载具在物理线程共享状态 */
-	FRandomStream RandomStream{123};
+	/** 随机种子（与求解器帧号共同决定输入，保证回放可重现） */
+	int32 Seed = 123;
 };

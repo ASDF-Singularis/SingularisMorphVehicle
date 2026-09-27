@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <CoreMinimal.h>
+#include <Engine/NetDriver.h>
 #include <Engine/WorldInitializationValues.h>
 #include <Physics/Experimental/PhysScene_Chaos.h>
 #include <Subsystems/WorldSubsystem.h>
@@ -62,6 +63,14 @@ class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSchedulerSubsystem : pub
 
 	/** 网络驱动创建回调句柄，用于注册 NetTokenStore。 */
 	FDelegateHandle OnNetDriverCreatedHandle{};
+
+	/**
+	 * NetTokenStore 延迟注册的委托句柄表（按 NetDriver 记录）。
+	 *
+	 * NetDriver 创建时令牌存储可能尚未就绪，此时以回调延迟注册；
+	 * 句柄必须保留，否则无法在子系统销毁时解绑，向已销毁对象回调。
+	 */
+	TMap<TWeakObjectPtr<UNetDriver>, FDelegateHandle> NetTokenStoreReadyHandles{};
 
 	/** 物理场景 PreTick 回调句柄（每帧物理步进前）。 */
 	FDelegateHandle OnPhysScenePreTickHandle{};
@@ -133,8 +142,12 @@ private:
 	 */
 	void OnNetDriverCreated(UWorld* World, UNetDriver* NetDriver);
 
-	/** NetTokenStore 就绪的延迟回调，实际执行令牌数据存储的注册。 */
-	void OnNetTokenStoreReady(UNetDriver* NetDriver) const;
+	/**
+	 * NetTokenStore 就绪的延迟回调，实际执行令牌数据存储的注册。
+	 *
+	 * 仅处理本子系统所属 World 的事件，并消费对应委托句柄。
+	 */
+	void OnNetTokenStoreReady(UNetDriver* NetDriver);
 
 	/**
 	 * 物理场景 PreTick 回调（每帧物理步进前，游戏线程）。

@@ -41,7 +41,12 @@ public:
 	virtual int32 GetAnimationSetupIndex() const { return INDEX_NONE; }
 	virtual const FVector& GetAnimationOffset() const { return FVector::ZeroVector; }
 
-	virtual TArray<FModuleInputSetup> GetInputConfig() const { return TArray<FModuleInputSetup>(); }
+	/** 模块输入配置（默认空表；实现方须保证返回的数组在对象存活期内有效） */
+	virtual const TArray<FModuleInputSetup>& GetInputConfig() const
+	{
+		static const TArray<FModuleInputSetup> EmptyInputConfig{};
+		return EmptyInputConfig;
+	}
 
 	virtual int32 GetTreeIndex() const { return INDEX_NONE; }
 	virtual void SetTreeIndex(const int32 NewValue) {}

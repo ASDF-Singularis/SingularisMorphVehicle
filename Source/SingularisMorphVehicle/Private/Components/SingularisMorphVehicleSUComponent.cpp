@@ -33,7 +33,10 @@ void USingularisMorphVehicleSUComponent::BeginPlay()
 			{
 				if (USingularisMorphVehicleMappingSubsystem* Subsystem =
 					World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>())
+				{
 					Subsystem->RegisterComponentMapping(PrimComp, this);
+					MappedPrimitiveComponent = PrimComp;
+				}
 			}
 		}
 	}
@@ -41,23 +44,27 @@ void USingularisMorphVehicleSUComponent::BeginPlay()
 
 void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	AActor* Owner = GetOwner();
-	if (IsValid(Owner))
+	// 以 BeginPlay 记录的物理组件为准注销：重新解析 DrivenComponent 在驱动组件
+	// 先于本组件销毁时必然失败，会把条目永久留在映射表中
+	UPrimitiveComponent* PrimComp = MappedPrimitiveComponent.Get();
+	if (!PrimComp)
 	{
-		if (USceneComponent* ResolvedComp = Cast<USceneComponent>(DrivenComponent.GetComponent(Owner)))
+		if (AActor* Owner = GetOwner())
+			PrimComp = Cast<UPrimitiveComponent>(DrivenComponent.GetComponent(Owner));
+	}
+
+	if (PrimComp)
+	{
+		if (const UWorld* World = GetWorld())
 		{
-			if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(ResolvedComp))
-			{
-				if (const UWorld* World = GetWorld())
-				{
-					if (USingularisMorphVehicleMappingSubsystem* Subsystem =
-						World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>())
-						// 仅注销自身条目，避免共享同一物理组件的其它 SU 被误清除
-						Subsystem->UnregisterComponentMapping(PrimComp, this);
-				}
-			}
+			if (USingularisMorphVehicleMappingSubsystem* Subsystem =
+				World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>())
+				// 仅注销自身条目，避免共享同一物理组件的其它 SU 被误清除
+				Subsystem->UnregisterComponentMapping(PrimComp, this);
 		}
 	}
+
+	MappedPrimitiveComponent = nullptr;
 
 	Super::EndPlay(EndPlayReason);
 }

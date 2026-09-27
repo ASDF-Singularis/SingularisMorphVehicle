@@ -54,6 +54,20 @@ enum class ESingularisMorphVehicleWheelAxisType : uint8
 };
 
 /**
+ * 引力奇点变型载具转向几何类型
+ *
+ * 决定同一转向轴上内外侧车轮的目标转角分配。转角本身始终经角速度限幅
+ * 逐步逼近目标值，故任何取值都保留转向的执行过程。
+ */
+UENUM(BlueprintType)
+enum class ESingularisMorphVehicleSteeringType : uint8
+{
+	SingleAngle UMETA(DisplayName = "单一角度（内外轮同角）"),
+	AngleRatio UMETA(DisplayName = "角度比例（内侧轮放大）"),
+	Ackermann UMETA(DisplayName = "阿克曼几何（按轴距与轮距计算）")
+};
+
+/**
  * 引力奇点变型载具变速箱类型
  */
 UENUM(BlueprintType)

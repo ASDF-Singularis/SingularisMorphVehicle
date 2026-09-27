@@ -3,6 +3,7 @@
 #include <CoreMinimal.h>
 #include <Chaos/Framework/PhysicsSolverBase.h>
 #include <Components/ActorComponent.h>
+#include <HAL/CriticalSection.h>
 #include <SimModule/ModuleInput.h>
 #include <SimModule/SimModuleTree.h>
 
@@ -223,6 +224,20 @@ public:
 	)
 	ESingularisMorphTraceType TraceType = ESingularisMorphTraceType::Raycast;
 
+	/**
+	 * 默认路面摩擦（抓地力）。
+	 *
+	 * 仅当悬挂射线命中面未提供物理材质时生效；命中面有物理材质时始终以材质摩擦为准。
+	 * 默认 0.7 与 UPhysicalMaterial 的默认摩擦系数一致。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变型载具仿真|悬挂",
+		meta = (DisplayName = "默认路面摩擦", ClampMin = "0.0", UIMin = "0.0")
+	)
+	float DefaultSurfaceFriction = 0.7f;
+
 #pragma endregion
 
 #pragma region 事件分发器
@@ -256,6 +271,14 @@ private:
 
 	/** 模拟模块树（游戏线程创建，物理线程接管所有权） */
 	TUniquePtr<Chaos::FSimModuleTree> SimulationModuleTree = nullptr;
+
+	/**
+	 * 动画槽位表访问锁。
+	 *
+	 * 槽位表由游戏线程写入（重建、输出分发），而动画线程在 PreUpdate 中读取同一份数据；
+	 * 并行动画求值开启时两者可同时执行，TArray 重分配期间读取会命中已释放内存。
+	 */
+	mutable FCriticalSection ModuleAnimationSetupsLock{};
 
 	/** 物理线程输出的插值数据 */
 	TUniquePtr<FSingularisMorphVehiclePhysicsOutput> VehiclePhysicsOutput = nullptr;
@@ -313,8 +336,19 @@ private:
 	/** 本地控制回退标记（无 NetworkPhysicsComponent 时生效） */
 	bool bIsLocallyControlled = false;
 
-	/** 当前挡位（由变速箱输出缓存） */
+	/** 当前挡位（由变速箱输出缓存；0 表示尚未收到输出或正经过空挡换挡） */
 	int32 CurrentGear = 0;
+
+	/** 是否已收到过变速箱输出：挡位未知时不产出换挡脉冲（否则会把变速箱的初始挡位误判为需要升降挡） */
+	bool bHasGearData = false;
+
+	/**
+	 * 目标挡位请求（SetGearInput 写入，Update 逐帧产出换挡脉冲直到挡位到达）。
+	 *
+	 * INDEX_NONE 表示无请求。变速箱一次只接受一挡（目标挡位 ±1），
+	 * 单次脉冲无法跨越多个挡位，故请求需跨多个换挡周期持续产出。
+	 */
+	int32 TargetGearInput = INDEX_NONE;
 
 	/** 引擎转速（由引擎输出缓存） */
 	float EngineRPM = 0.0f;
@@ -422,17 +456,25 @@ public:
 	/** 更新物理阻尼属性 */
 	void UpdatePhysicalProperties();
 
-	/** 获取模块动画配置（可修改） */
+	/** 获取模块动画配置（可修改）
+	 *
+	 * 写入动画槽位表必须持有 GetModuleAnimationSetupsLock()，否则会与动画线程的
+	 * 读取竞争（TArray 重分配期间读取会命中已释放内存）；拓扑重建请走
+	 * RebuildFromSnapshot / RegisterModuleAnimationSetup 等内部路径
+	 */
 	TArray<FSingularisMorphModuleAnimationSetup>& AccessModuleAnimationSetups()
 	{
 		return ModuleAnimationSetups;
 	}
 
-	/** 获取模块动画配置（只读） */
+	/** 获取模块动画配置（只读）；跨线程读取前必须持有 GetModuleAnimationSetupsLock() */
 	const TArray<FSingularisMorphModuleAnimationSetup>& GetModuleAnimationSetups() const
 	{
 		return ModuleAnimationSetups;
 	}
+
+	/** 获取动画槽位表的访问锁（动画线程与游戏线程共享该表） */
+	FCriticalSection& GetModuleAnimationSetupsLock() const { return ModuleAnimationSetupsLock; }
 
 	/** 获取仿真树处理顺序 */
 	ESimTreeProcessingOrder GetSimulationTreeProcessingOrder() const { return SimulationTreeProcessingOrder; }

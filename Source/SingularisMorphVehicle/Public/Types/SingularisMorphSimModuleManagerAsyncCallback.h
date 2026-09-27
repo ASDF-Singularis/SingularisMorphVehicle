@@ -231,6 +231,7 @@ struct FPhysicsSingularisMorphVehicleInputs
 		  TraceParams(),
 		  TraceCollisionResponse(),
 		  TraceType(ESingularisMorphTraceType::Raycast),
+		  SurfaceFrictionFallback(0.7f),
 		  CurrentTimeDilation(1.0f) {}
 
 	mutable FNetworkSingularisMorphVehicleInputs NetworkInputs;
@@ -238,6 +239,10 @@ struct FPhysicsSingularisMorphVehicleInputs
 	mutable FCollisionQueryParams TraceParams;
 	mutable FCollisionResponseContainer TraceCollisionResponse;
 	mutable ESingularisMorphTraceType TraceType;
+
+	/** 命中面无物理材质时使用的抓地力，默认取物理材质的标准摩擦系数 */
+	mutable float SurfaceFrictionFallback;
+
 	mutable FSingularisMorphGameStateInputs StateInputs;
 	mutable float CurrentTimeDilation = 1.0f;
 };

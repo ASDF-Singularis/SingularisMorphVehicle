@@ -7,6 +7,7 @@
 #include <Engine/Font.h>
 #include <Engine/World.h>
 #include <GameFramework/WorldSettings.h>
+#include <Misc/ScopeLock.h>
 #include <Physics/Experimental/PhysScene_Chaos.h>
 #include <PhysicsEngine/BodyInstance.h>
 #include <PhysicsEngine/PhysicsObjectExternalInterface.h>
@@ -29,6 +30,39 @@
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 #include "Subsystems/SingularisMorphVehicleSchedulerSubsystem.h"
 #include "Types/SingularisMorphVehicleInputProducer.h"
+#include "Types/SingularisMorphVehicleInputUtils.h"
+
+namespace
+{
+	/**
+	 * 输入配置等价判定：名称、类型与输入语义标志全部一致时才视为未变更。
+	 *
+	 * FModuleInputSetup 的 operator== 仅比较名称，按该判据跳过重建会让类型与
+	 * 标志（衰减/消费即清零）的变更静默失效。
+	 */
+	bool IsInputConfigurationEqual(
+		const TArray<FModuleInputSetup>& Left,
+		const TArray<FModuleInputSetup>& Right
+	)
+	{
+		if (Left.Num() != Right.Num()) return false;
+
+		for (auto I = 0; I < Left.Num(); ++I)
+		{
+			const FModuleInputSetup& LeftSetup = Left[I];
+			const FModuleInputSetup& RightSetup = Right[I];
+
+			if (LeftSetup.Name != RightSetup.Name ||
+				LeftSetup.Type != RightSetup.Type ||
+				LeftSetup.bApplyInputDecay != RightSetup.bApplyInputDecay ||
+				LeftSetup.bInverseInputDecay != RightSetup.bInverseInputDecay ||
+				LeftSetup.bClearAfterConsumed != RightSetup.bClearAfterConsumed)
+				return false;
+		}
+
+		return true;
+	}
+}
 
 USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationComponent()
 {
@@ -153,7 +187,21 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	// 4) 终止适配器（解绑事件）
 	if (PhysicsAdapter) PhysicsAdapter->Terminate();
 
+	// 5) 复位跨世的缓存状态：物理状态重建后新建的变速箱从默认挡位起步，
+	//    沿用上一世代的缓存会让首个 SetGearInput 产生错误方向的脉冲
 	CachedPhysicsProxy = nullptr;
+	CurrentGear = 0;
+	bHasGearData = false;
+	TargetGearInput = INDEX_NONE;
+	EngineRPM = 0.0f;
+	EngineTorque = 0.0f;
+	bIsLocallyControlled = false;
+	bPendingReplicationStructureRebuild = false;
+	CurrentAsyncDataType = AsyncInvalid;
+	CurrentAsyncInput = nullptr;
+	CurrentAsyncOutput = nullptr;
+	NextAsyncOutput = nullptr;
+	OutputInterpolationAlpha = 0.0f;
 
 	Super::OnDestroyPhysicsState();
 }
@@ -225,60 +273,72 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 	}
 
 	// 3) 维护动画槽位：删除指向被移除模块的槽位，被多个模块共享的槽位由仍存活的模块接管，
-	//    其余槽位按删除情况整体前移，保持槽位下标与数组下标一致
-	const int32 NumSetups = ModuleAnimationSetups.Num();
-	TArray<int32> SlotRemap;
-	SlotRemap.Init(INDEX_NONE, NumSetups);
-
-	auto NumRemainingSetups = 0;
-	for (auto I = 0; I < NumSetups; ++I)
+	//    其余槽位按删除情况整体前移，保持槽位下标与数组下标一致。
+	//    槽位表由动画线程共享，重构期间持锁
 	{
-		if (ModuleAnimationSetups[I].ModuleGUID == ModuleGuid)
-		{
-			// 共享同一骨骼的模块（如车轮与悬挂）接管槽位，无接管者时该槽位失效
-			Chaos::ISimulationModuleBase* Successor = nullptr;
-			for (const auto& Pair : GuidToCoreModule)
-			{
-				if (Pair.Value && Pair.Value->GetAnimationSetupIndex() == I &&
-					Pair.Value->GetBoneName() == ModuleAnimationSetups[I].BoneName)
-				{
-					Successor = Pair.Value;
-					break;
-				}
-			}
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
 
-			if (!Successor) continue;
+		const int32 NumSetups = ModuleAnimationSetups.Num();
+		TArray<int32> SlotRemap;
+		SlotRemap.Init(INDEX_NONE, NumSetups);
 
-			// 接管槽位时同步接管者的初始姿态：非骨骼动画以初始姿态为增量基准
-			// （模块的 InitialParticleTransform 即注册槽位时使用的初始变换）
-			ModuleAnimationSetups[I].ModuleGUID = Successor->GetGuid();
-			ModuleAnimationSetups[I].InitialRotOffset = Successor->GetInitialParticleTransform().GetRotation();
-			ModuleAnimationSetups[I].InitialLocOffset = Successor->GetInitialParticleTransform().GetTranslation();
-		}
-
-		SlotRemap[I] = NumRemainingSetups++;
-	}
-
-	if (NumRemainingSetups != NumSetups)
-	{
-		auto Write = 0;
+		auto NumRemainingSetups = 0;
 		for (auto I = 0; I < NumSetups; ++I)
 		{
-			if (SlotRemap[I] != INDEX_NONE)
-				ModuleAnimationSetups[Write++] = ModuleAnimationSetups[I];
+			if (ModuleAnimationSetups[I].ModuleGUID == ModuleGuid)
+			{
+				// 共享同一骨骼的模块（如车轮与悬挂）接管槽位，无接管者时该槽位失效
+				Chaos::ISimulationModuleBase* Successor = nullptr;
+				for (const auto& Pair : GuidToCoreModule)
+				{
+					if (Pair.Value && Pair.Value->GetAnimationSetupIndex() == I &&
+						Pair.Value->GetBoneName() == ModuleAnimationSetups[I].BoneName)
+					{
+						Successor = Pair.Value;
+						break;
+					}
+				}
+
+				if (!Successor) continue;
+
+				// 接管槽位时同步接管者的初始姿态：非骨骼动画以初始姿态为增量基准
+				// （模块的 InitialParticleTransform 即注册槽位时使用的初始变换）
+				ModuleAnimationSetups[I].ModuleGUID = Successor->GetGuid();
+				ModuleAnimationSetups[I].InitialRotOffset = Successor->GetInitialParticleTransform().GetRotation();
+				ModuleAnimationSetups[I].InitialLocOffset = Successor->GetInitialParticleTransform().GetTranslation();
+
+				// 清空接管前的动画残值：旧模块的标志与偏移会在接管者产出首帧数据前
+				// 被当作当帧动画应用，表现为部件被钉在旧位姿
+				ModuleAnimationSetups[I].AnimFlags = 0;
+				ModuleAnimationSetups[I].RotOffset = FRotator::ZeroRotator;
+				ModuleAnimationSetups[I].LocOffset = FVector::ZeroVector;
+				ModuleAnimationSetups[I].CombinedRotation = FQuat::Identity;
+			}
+
+			SlotRemap[I] = NumRemainingSetups++;
 		}
-		ModuleAnimationSetups.SetNum(NumRemainingSetups);
-	}
 
-	for (const auto& Pair : GuidToCoreModule)
-	{
-		Chaos::ISimulationModuleBase* Module = Pair.Value;
-		if (!Module) continue;
+		if (NumRemainingSetups != NumSetups)
+		{
+			auto Write = 0;
+			for (auto I = 0; I < NumSetups; ++I)
+			{
+				if (SlotRemap[I] != INDEX_NONE)
+					ModuleAnimationSetups[Write++] = ModuleAnimationSetups[I];
+			}
+			ModuleAnimationSetups.SetNum(NumRemainingSetups);
+		}
 
-		const int32 Slot = Module->GetAnimationSetupIndex();
-		if (!SlotRemap.IsValidIndex(Slot) || SlotRemap[Slot] == INDEX_NONE) continue;
+		for (const auto& Pair : GuidToCoreModule)
+		{
+			Chaos::ISimulationModuleBase* Module = Pair.Value;
+			if (!Module) continue;
 
-		Module->SetAnimationData(Module->GetBoneName(), Module->GetAnimationOffset(), SlotRemap[Slot]);
+			const int32 Slot = Module->GetAnimationSetupIndex();
+			if (!SlotRemap.IsValidIndex(Slot) || SlotRemap[Slot] == INDEX_NONE) continue;
+
+			Module->SetAnimationData(Module->GetBoneName(), Module->GetAnimationOffset(), SlotRemap[Slot]);
+		}
 	}
 
 	// 4) 排队删除树节点
@@ -320,9 +380,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	const FSingularisMorphVehiclePhysicsAdapterSnapshot& Snapshot
 )
 {
+	// 1) 前置守卫（快照已在调用方 PreTickGT 校验，此处兜底）
 	if (!VehicleSimulationPT) return;
 
-	// 1) 解析映射子系统：SU 组件的查询统一由映射完成
 	const UWorld* World = GetWorld();
 	const USingularisMorphVehicleMappingSubsystem* Subsystem =
 		World ? World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>() : nullptr;
@@ -395,28 +455,53 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		}
 	}
 
-	// 5) 底盘守卫：不存在 Chassis 类型 SU 时（车身件脱离集群 = 载具解体），清除全部模拟模块
-	auto bHasChassis = false;
-	for (const USingularisMorphVehicleSUComponent* SUComp : AllSUComponents)
+	// 5) 底盘守卫：不存在参与本次快照的 Chassis 类型 SU 时（车身件脱离集群 = 载具解体），清除全部模拟模块。
+	//    判据必须包含“驱动组件位于本次快照中”：仅以组件是否存在为判据，已离簇的
+	//    底盘件仍会被当作有效底盘，使整棵树以无效粒子索引重建（力继续施加到集群根）。
+	//    无驱动组件的底盘视为纯仿真模块（未入簇），同样参与构树
+	auto NumChassisComponents = 0;
+	auto bHasChassisInSnapshot = false;
+	for (USingularisMorphVehicleSUComponent* SUComp : AllSUComponents)
 	{
-		if (SUComp->GetModuleType() == ESingularisMorphVehicleModuleType::Chassis)
-		{
-			bHasChassis = true;
-			break;
-		}
+		if (SUComp->GetModuleType() != ESingularisMorphVehicleModuleType::Chassis) continue;
+
+		++NumChassisComponents;
+
+		const UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
+			SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
+		);
+		if (!ProxyComp || EntityMap.Contains(ProxyComp))
+			bHasChassisInSnapshot = true;
 	}
-	if (!bHasChassis)
+
+	if (!bHasChassisInSnapshot)
 	{
 		UE_LOG(
 			LogSingularisMorphVehicle,
 			Warning,
-			TEXT("[RebuildFromSnapshot] Chassis not found in snapshot (%d entities) - clearing all simulation modules"),
-			Snapshot.Entities.Num()
+			TEXT(
+				"[RebuildFromSnapshot] No chassis present in snapshot (%d entities, %d chassis components on the actor) - clearing all simulation modules"
+			),
+			Snapshot.Entities.Num(),
+			NumChassisComponents
 		);
 
 		CaptureModuleSimStates();
 		ClearAllSimulationModules();
 		return;
+	}
+
+	if (NumChassisComponents > 1)
+	{
+		// 多底盘无法同时作为根节点，取首个建成者，其余不入树
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Warning,
+			TEXT(
+				"[RebuildFromSnapshot] %d chassis components found - only the first one becomes the simulation root, the rest are ignored"
+			),
+			NumChassisComponents
+		);
 	}
 
 	// 5a) 幂等守卫：模块布局与新快照一致时跳过重建。
@@ -437,7 +522,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			break;
 		}
 
-		const Chaos::ISimulationModuleBase* const* FoundModule = GuidToCoreModule.Find(ExistingModule->Guid);
+		Chaos::ISimulationModuleBase* const* FoundModule = GuidToCoreModule.Find(ExistingModule->Guid);
 		if (!FoundModule || !*FoundModule)
 		{
 			bTopologyUnchanged = false;
@@ -458,7 +543,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			                                                                    : nullptr;
 		const int32 ExpectedParticleIdx = Entity ? Entity->ParticleIndex : Chaos::FUniqueIdx().Idx;
 
-		bTopologyUnchanged = (*FoundModule)->GetParticleIndex().Idx == ExpectedParticleIdx;
+		// 动画开关是运行期可写属性，变化时须重建以重新登记/释放动画槽位
+		bTopologyUnchanged = (*FoundModule)->GetParticleIndex().Idx == ExpectedParticleIdx &&
+			(*FoundModule)->IsAnimationEnabled() == SUComp->GetAnimationEnabled();
 	}
 
 	if (bTopologyUnchanged) return;
@@ -514,7 +601,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	// 8) 清空所有缓存，保证幂等
 	ComponentToPhysicsObjects.Empty();
 	PhysicsGuidToComponent.Empty();
-	ModuleAnimationSetups.Empty();
+	{
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
+		ModuleAnimationSetups.Empty();
+	}
 	NextConstructionIndex = 0;
 
 	// 8a) 缓存根物理对象（首次或重建时刷新）
@@ -592,7 +682,23 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			SUComp->GetAnimationOffset()
 		);
 
-		if (ModuleIdx == INDEX_NONE) return INDEX_NONE;
+		if (ModuleIdx == INDEX_NONE)
+		{
+			// 模块已创建（悬挂类模块此时已建立物理约束），入树失败必须自行释放，
+			// 否则模块对象与其外部资源（悬挂约束）泄漏且约束会持续施力
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Error,
+				TEXT("[RebuildFromSnapshot] Failed to add module for %s - releasing the created module"),
+				*SUComp->GetName()
+			);
+
+			CoreModule->SetStateFlags(Chaos::eSimModuleState::Disabled);
+			CoreModule->OnTermination_External();
+			delete CoreModule;
+
+			return INDEX_NONE;
+		}
 
 		SUComp->SetModuleGuid(CoreModule->GetGuid());
 
@@ -939,19 +1045,27 @@ void USingularisMorphVehicleSimulationComponent::AddActorsToIgnore(TArray<AActor
 
 void USingularisMorphVehicleSimulationComponent::RemoveActorsToIgnore(TArray<AActor*>& ActorsIn)
 {
-	for (AActor* Actor : ActorsIn)
-		ActorsToIgnore.Remove(Actor);
-}
+	// Owner 在 OnCreatePhysicsState 中自忽略：移除它会使悬挂射线命中载具自身，
+	// 造成悬挂长度跳变与抓地力异常，故一律保留
+	const AActor* Owner = GetOwner();
 
-void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime) {}
+	for (AActor* Actor : ActorsIn)
+	{
+		if (!Actor || Actor == Owner) continue;
+
+		ActorsToIgnore.Remove(Actor);
+	}
+}
 
 void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
 {
 	if (!PhysicsAdapter || !PhysicsAdapter->IsReady() || !PhysicsAdapter->IsDirty()) return;
 
-	// 前置守卫：缺少映射子系统或 Owner 时重建必然失败。
-	// 此时不消费脏标记，留待下一帧重试，避免拓扑变更被静默丢弃。
+	// 前置守卫：缺少映射子系统、Owner 或物理线程端模拟对象时重建必然失败。
+	// 此时不消费脏标记，留待下一帧重试，避免拓扑变更被静默丢弃
 	if (!GetOwner()) return;
+	if (!VehicleSimulationPT) return;
+
 	const UWorld* World = GetWorld();
 	if (!World || !World->GetSubsystem<USingularisMorphVehicleMappingSubsystem>()) return;
 
@@ -1043,6 +1157,22 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 	}
 
 	// 3) 分发输出数据到各 SU Component，同时缓存通用状态
+	//    动画数据先累积到本地副本（槽位表由动画线程共享，避免持锁执行外部回调），
+	//    并帧首清零全部槽位的标志：标志只增不减会使已停止动画的通道永久保留旧偏移，
+	//    把部件钉在上一帧（或上一个模块）的位姿上
+	TArray<FSingularisMorphModuleAnimationSetup> AnimSetupUpdates;
+	{
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
+		AnimSetupUpdates = ModuleAnimationSetups;
+	}
+	for (FSingularisMorphModuleAnimationSetup& AnimSetup : AnimSetupUpdates)
+	{
+		AnimSetup.AnimFlags = 0;
+		AnimSetup.RotOffset = FRotator::ZeroRotator;
+		AnimSetup.LocOffset = FVector::ZeroVector;
+		AnimSetup.CombinedRotation = FQuat::Identity;
+	}
+
 	for (auto I = 0; I < NumItems; ++I)
 	{
 		Chaos::FSimOutputData* ModuleOutput = VehiclePhysicsOutput->SimTreeOutputData[I];
@@ -1066,7 +1196,10 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 
 		// 3a) 缓存常用状态（多变速箱/多引擎时取最后一个）
 		if (ModuleOutput->IsSimType<Chaos::FTransmissionSimModule>())
+		{
 			CurrentGear = static_cast<Chaos::FTransmissionOutputData*>(ModuleOutput)->CurrentGear;
+			bHasGearData = true;
+		}
 		else if (ModuleOutput->IsSimType<Chaos::FEngineSimModule>())
 		{
 			const auto* EngineOutput = static_cast<const Chaos::FEngineOutputData*>(ModuleOutput);
@@ -1086,16 +1219,47 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 		ModuleOutput->GetFinalAnimDataGameThread(WorldTransform, AnimData);
 
 		const int32 AnimIndex = AnimData.AnimationSetupIndex;
-		if (AnimIndex >= 0 && AnimIndex < ModuleAnimationSetups.Num())
+		if (AnimIndex >= 0 && AnimIndex < AnimSetupUpdates.Num())
 		{
-			ModuleAnimationSetups[AnimIndex].AnimFlags |= AnimData.AnimFlags;
-			ModuleAnimationSetups[AnimIndex].CombinedRotation = AnimData.CombinedRotation;
-
+			// 同一骨骼可能由多个模块共享（如车轮旋转与悬挂位移），按通道累加标志，
+			// 但仅写入该模块真正驱动的通道，避免未驱动通道被单位值覆盖
 			if (AnimData.AnimFlags & Chaos::EAnimationFlags::AnimateRotation)
-				ModuleAnimationSetups[AnimIndex].RotOffset = AnimData.AnimationRotOffset;
+			{
+				AnimSetupUpdates[AnimIndex].AnimFlags |= Chaos::EAnimationFlags::AnimateRotation;
+				AnimSetupUpdates[AnimIndex].CombinedRotation = AnimData.CombinedRotation;
+				AnimSetupUpdates[AnimIndex].RotOffset = AnimData.AnimationRotOffset;
+			}
 
 			if (AnimData.AnimFlags & Chaos::EAnimationFlags::AnimatePosition)
-				ModuleAnimationSetups[AnimIndex].LocOffset = AnimData.AnimationLocOffset;
+			{
+				AnimSetupUpdates[AnimIndex].AnimFlags |= Chaos::EAnimationFlags::AnimatePosition;
+				AnimSetupUpdates[AnimIndex].LocOffset = AnimData.AnimationLocOffset;
+			}
+		}
+	}
+
+	// 3c) 回写本帧动画数据：本地累积期间不持锁，避免持锁执行模块输出回调。
+	//     槽位表可能在回调期间被增删（手动注册、重建、销毁），故按 ModuleGUID 定位目标槽位
+	//     逐项回写而非整表覆盖，避免覆盖期间的变更丢失、已移除的槽位被复制品复活
+	if (!AnimSetupUpdates.IsEmpty())
+	{
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
+
+		for (const FSingularisMorphModuleAnimationSetup& Updated : AnimSetupUpdates)
+		{
+			const int32 Slot = ModuleAnimationSetups.IndexOfByPredicate(
+				[Guid = Updated.ModuleGUID](const FSingularisMorphModuleAnimationSetup& Setup)
+				{
+					return Setup.ModuleGUID == Guid;
+				}
+			);
+			if (Slot == INDEX_NONE) continue;
+
+			FSingularisMorphModuleAnimationSetup& Target = ModuleAnimationSetups[Slot];
+			Target.AnimFlags = Updated.AnimFlags;
+			Target.RotOffset = Updated.RotOffset;
+			Target.LocOffset = Updated.LocOffset;
+			Target.CombinedRotation = Updated.CombinedRotation;
 		}
 	}
 
@@ -1119,12 +1283,14 @@ void USingularisMorphVehicleSimulationComponent::ProduceInput(
 {
 	if (!AsyncInput) return;
 
-	IPhysicsProxyBase* Proxy = GetPhysicsProxy();
-	if (!Proxy) return;
-
-	// 1) 输入生产者产出本物理步控制输入（GT 频率缓冲合并 → PT 频率拷出并复位）
+	// 1) 输入生产者产出本物理步控制输入（GT 频率缓冲合并 → PT 频率拷出并复位）。
+	//    必须早于代理守卫：代理未解析（启动、物理重同步）期间不消费缓冲，
+	//    会在恢复后把多次脉冲叠加成一次输入
 	if (InputProducer)
 		InputProducer->ProduceInput(PhysicsStep, NumSteps, InputNameMap, InputsContainer);
+
+	IPhysicsProxyBase* Proxy = GetPhysicsProxy();
+	if (!Proxy) return;
 
 	AsyncInput->SetVehicle(this);
 	AsyncInput->Proxy = Proxy;
@@ -1165,6 +1331,9 @@ void USingularisMorphVehicleSimulationComponent::ProduceInput(
 	AsyncInput->PhysicsInputs.TraceParams = TraceParams;
 	AsyncInput->PhysicsInputs.TraceCollisionResponse = SuspensionTraceCollisionResponses;
 	AsyncInput->PhysicsInputs.TraceType = TraceType;
+
+	// 6) 无物理材质命中面的摩擦回退值（物理线程不访问 UObject，故参数在游戏线程取出）
+	AsyncInput->PhysicsInputs.SurfaceFrictionFallback = DefaultSurfaceFriction;
 }
 
 void USingularisMorphVehicleSimulationComponent::PostUpdate()
@@ -1332,12 +1501,49 @@ void USingularisMorphVehicleSimulationComponent::SetInputAxis3D(
 
 void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 {
-	// 换挡通过 ChangeUp/ChangeDown 脉冲驱动 Chaos 变速箱，
-	// 目标挡位与缓存挡位比较得出升/降挡方向（变速箱自身维护换挡时序）
-	if (Gear > CurrentGear)
-		SetInputBool(Chaos::ChangeUpControlName, true);
-	else if (Gear < CurrentGear)
-		SetInputBool(Chaos::ChangeDownControlName, true);
+	// 请求的挡位先按变速箱的实际挡数钳制：变速箱会把目标挡位夹到
+	// [-倒挡数, 前进挡数]，越界请求会让“当前挡位 ≠ 目标挡位”恒成立而逐帧持续发脉冲
+	auto MinGear = -1;
+	auto MaxGear = 1;
+
+	if (const AActor* Owner = GetOwner())
+	{
+		if (const USingularisTransmissionSUComponent* TransmissionSU =
+			Owner->FindComponentByClass<USingularisTransmissionSUComponent>())
+		{
+			MaxGear = FMath::Max(1, TransmissionSU->ForwardRatios.Num());
+			MinGear = -FMath::Max(1, TransmissionSU->ReverseRatios.Num());
+		}
+	}
+
+	// 仅记录目标挡位，换挡脉冲由 Update 逐帧产出：变速箱一次只接受一挡（目标挡位 ±1）
+	TargetGearInput = FMath::Clamp(Gear, MinGear, MaxGear);
+}
+
+void USingularisMorphVehicleSimulationComponent::Update(const float /*DeltaTime*/)
+{
+	// 未收到变速箱输出时挡位未知：此时发脉冲会把变速箱的初始挡位误判为需升降挡
+	if (TargetGearInput == INDEX_NONE || !bHasGearData || CurrentGear == TargetGearInput) return;
+
+	// 换挡进行中：变速箱以空挡（0）过渡，此时再发脉冲会把目标挡位继续推高
+	if (CurrentGear == 0) return;
+
+	// 无变速箱模块时脉冲无处消费
+	auto bHasTransmission = false;
+	for (const TPair<int32, Chaos::ISimulationModuleBase*>& Pair : GuidToCoreModule)
+	{
+		if (Pair.Value && Pair.Value->IsSimType<Chaos::FTransmissionSimModule>())
+		{
+			bHasTransmission = true;
+			break;
+		}
+	}
+	if (!bHasTransmission) return;
+
+	SetInputBool(
+		CurrentGear < TargetGearInput ? Chaos::ChangeUpControlName : Chaos::ChangeDownControlName,
+		true
+	);
 }
 
 void USingularisMorphVehicleSimulationComponent::SetInput(
@@ -1546,7 +1752,10 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 	GuidToCoreModule.Empty();
 	ComponentToPhysicsObjects.Empty();
 	PhysicsGuidToComponent.Empty();
-	ModuleAnimationSetups.Empty();
+	{
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
+		ModuleAnimationSetups.Empty();
+	}
 	StoredTreeUpdates = Chaos::FSimTreeUpdates();
 
 	// 5) 物理线程可能正在执行在飞帧的 Simulate，
@@ -1612,7 +1821,10 @@ void USingularisMorphVehicleSimulationComponent::ClearAllSimulationModules()
 	// 2) 清空所有缓存，保证幂等
 	ComponentToPhysicsObjects.Empty();
 	PhysicsGuidToComponent.Empty();
-	ModuleAnimationSetups.Empty();
+	{
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
+		ModuleAnimationSetups.Empty();
+	}
 	NextConstructionIndex = 0;
 
 	// 3) 提交删除到物理线程
@@ -1668,13 +1880,31 @@ void USingularisMorphVehicleSimulationComponent::AssimilateComponentInputs(
 
 	auto AddConfigUnique = [&OutCombinedInputs](const FModuleInputSetup& Config)
 	{
-		if (!OutCombinedInputs.ContainsByPredicate(
-			[&Config](const FModuleInputSetup& Existing)
+		if (FModuleInputSetup* Existing = OutCombinedInputs.FindByPredicate(
+			[&Config](const FModuleInputSetup& Candidate)
 			{
-				return Existing.Name == Config.Name;
+				return Candidate.Name == Config.Name;
 			}
 		))
-			OutCombinedInputs.Add(Config);
+		{
+			// 同名不同类型的声明无法共存于同一容器（容器按名称单槽位），保留首条并告警
+			if (Existing->Type != Config.Type)
+			{
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Warning,
+					TEXT(
+						"[AssimilateComponentInputs] Input %s is declared with conflicting types (%d vs %d) - keeping the first declaration"
+					),
+					*Config.Name.ToString(),
+					static_cast<int32>(Existing->Type),
+					static_cast<int32>(Config.Type)
+				);
+			}
+			return;
+		}
+
+		OutCombinedInputs.Add(Config);
 	};
 
 	// 2) 聚合 Owner 上全部 SU 组件的输入配置，按名称去重
@@ -1711,15 +1941,48 @@ void USingularisMorphVehicleSimulationComponent::SetupInputConfiguration(
 	TArray<FModuleInputSetup> NewCombinedConfig;
 	AssimilateComponentInputs(NewCombinedConfig);
 
-	// 2) 配置未变更且生产者就绪时跳过重建（运行时模块增删会反复进入此函数）
-	if (!bForceReinitialize && NewCombinedConfig == CombinedInputConfiguration && InputProducer)
+	// 2) 配置与生产者类型均未变化时跳过重建（运行时模块增删会反复进入此函数）。
+	//    位置必须早于 CombinedInputConfiguration 的覆盖：下面的比较需要旧值
+	const bool bProducerClassMatches = InputProducer && InputProducer->GetClass() == InputProducerClass.Get();
+	if (!bForceReinitialize && bProducerClassMatches &&
+		IsInputConfigurationEqual(NewCombinedConfig, CombinedInputConfiguration))
 		return;
+
+	// 3) 生产者实例：类不匹配时重建实例（否则换类后仍沿用旧实例）
+	if (InputProducer && InputProducer->GetClass() != InputProducerClass.Get())
+		InputProducer = nullptr;
+
+	if (!InputProducer && InputProducerClass)
+		InputProducer = NewObject<UVehicleInputProducerBase>(this, InputProducerClass);
 
 	CombinedInputConfiguration = MoveTemp(NewCombinedConfig);
 
-	// 3) 实例化输入生产者
-	if (!InputProducer && InputProducerClass)
-		InputProducer = NewObject<UVehicleInputProducerBase>(this, InputProducerClass);
+	// 4) 初始化控制/状态输入容器，并迁移重建前已缓冲的输入值：
+	//    容器重建会清零全部输入，否则拓扑变更帧会丢失玩家已缓冲的油门/转向
+	{
+		const FInputInterface::FInputNameMap PreviousInputMap = InputNameMap;
+		const TArray<FModuleInputValue> PreviousValues = InputsContainer.AccessInputValues();
+
+		InputsContainer.Initialize(CombinedInputConfiguration, InputNameMap);
+		SingularisMorphVehicleInputUtils::CarryOverValues(
+			InputsContainer,
+			InputNameMap,
+			PreviousInputMap,
+			PreviousValues
+		);
+	}
+	{
+		const FInputInterface::FInputNameMap PreviousStateMap = StateNameMap;
+		const TArray<FModuleInputValue> PreviousStateValues = StateInputContainer.AccessInputValues();
+
+		StateInputContainer.Initialize(StateInputConfiguration, StateNameMap);
+		SingularisMorphVehicleInputUtils::CarryOverValues(
+			StateInputContainer,
+			StateNameMap,
+			PreviousStateMap,
+			PreviousStateValues
+		);
+	}
 
 	if (InputProducer)
 	{
@@ -1736,10 +1999,6 @@ void USingularisMorphVehicleSimulationComponent::SetupInputConfiguration(
 		}
 	}
 
-	// 4) 初始化控制/状态输入容器
-	InputsContainer.Initialize(CombinedInputConfiguration, InputNameMap);
-	StateInputContainer.Initialize(StateInputConfiguration, StateNameMap);
-
 	// 5) 同步物理线程端输入配置
 	if (VehicleSimulationPT)
 	{
@@ -1751,6 +2010,8 @@ void USingularisMorphVehicleSimulationComponent::SetupInputConfiguration(
 
 void USingularisMorphVehicleSimulationComponent::UpdateNonSkeletalAnimations()
 {
+	// 仅游戏线程调用，且在 ParallelUpdate 提交本帧动画数据之后：
+	// 同线程读取无需持锁，跨线程读取（动画代理）必须持有 GetModuleAnimationSetupsLock()
 	for (const FSingularisMorphModuleAnimationSetup& AnimSetup : ModuleAnimationSetups)
 	{
 		const int32 ModuleGuid = AnimSetup.ModuleGUID;
@@ -1775,9 +2036,9 @@ void USingularisMorphVehicleSimulationComponent::UpdateNonSkeletalAnimations()
 		const USceneComponent* AttachParent = ComponentToAnimate->GetAttachParent();
 		const FTransform ReferenceTransform = PhysicsAdapter
 			                                      ? PhysicsAdapter->GetReferenceTransform()
-			                                      : (AttachParent
-				                                         ? AttachParent->GetComponentTransform()
-				                                         : FTransform::Identity);
+			                                      : AttachParent
+			                                      ? AttachParent->GetComponentTransform()
+			                                      : FTransform::Identity;
 
 		// 1) 以部件当前变换为基准（未参与动画的通道保持现状），叠加动画数据
 		FTransform TargetTransform = ComponentToAnimate->GetComponentTransform().GetRelativeTransform(
@@ -1801,7 +2062,7 @@ void USingularisMorphVehicleSimulationComponent::UpdateNonSkeletalAnimations()
 		const FTransform ReferenceToParent = AttachParent
 			                                     ? ReferenceTransform.GetRelativeTransform(
 				                                     AttachParent->GetComponentTransform()
-				                                     )
+			                                     )
 			                                     : ReferenceTransform;
 
 		ComponentToAnimate->SetRelativeTransform(
@@ -1994,33 +2255,38 @@ int32 USingularisMorphVehicleSimulationComponent::RegisterModuleAnimationSetup(
 
 	// 2) 骨骼名非空时复用同一骨骼的既有槽位：
 	//    多个模块共用一根骨骼（如车轮与悬挂）时，重复槽位会让骨骼动画对同一骨骼
-	//    施加多次变换；骨骼名为空表示非骨骼动画，各模块独占槽位以对应各自的驱动组件
+	//    施加多次变换；骨骼名为空表示非骨骼动画，各模块独占槽位以对应各自的驱动组件。
+	//    槽位表由动画线程共享，登记期间持锁
 	int32 SetupIndex = INDEX_NONE;
-	if (BoneName != NAME_None)
 	{
-		for (auto I = 0; I < ModuleAnimationSetups.Num(); ++I)
+		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
+
+		if (BoneName != NAME_None)
 		{
-			if (ModuleAnimationSetups[I].BoneName == BoneName)
+			for (auto I = 0; I < ModuleAnimationSetups.Num(); ++I)
 			{
-				SetupIndex = I;
-				break;
+				if (ModuleAnimationSetups[I].BoneName == BoneName)
+				{
+					SetupIndex = I;
+					break;
+				}
 			}
 		}
-	}
 
-	// 3) 新建槽位记录初始姿态，供非骨骼动画按增量叠加
-	if (SetupIndex == INDEX_NONE)
-	{
-		SetupIndex = ModuleAnimationSetups.Num();
+		// 3) 新建槽位记录初始姿态，供非骨骼动画按增量叠加
+		if (SetupIndex == INDEX_NONE)
+		{
+			SetupIndex = ModuleAnimationSetups.Num();
 
-		FSingularisMorphModuleAnimationSetup AnimSetup(
-			BoneName,
-			CoreModule->GetTransformIndex(),
-			CoreModule->GetGuid()
-		);
-		AnimSetup.InitialRotOffset = InitialTransform.GetRotation();
-		AnimSetup.InitialLocOffset = InitialTransform.GetTranslation();
-		ModuleAnimationSetups.Add(AnimSetup);
+			FSingularisMorphModuleAnimationSetup AnimSetup(
+				BoneName,
+				CoreModule->GetTransformIndex(),
+				CoreModule->GetGuid()
+			);
+			AnimSetup.InitialRotOffset = InitialTransform.GetRotation();
+			AnimSetup.InitialLocOffset = InitialTransform.GetTranslation();
+			ModuleAnimationSetups.Add(AnimSetup);
+		}
 	}
 
 	CoreModule->SetAnimationData(BoneName, AnimationOffset, SetupIndex);

@@ -109,6 +109,18 @@ public:
 	/** 生成网络复制结构 */
 	void GenerateReplicationStructure(FNetworkSingularisMorphVehicleStates& State);
 
+	/**
+	 * 在写锁保护下将网络状态应用到模拟树（`SetSimState` 会写回各模块状态）。
+	 *
+	 * 模拟树的增删在物理线程以写锁执行，网络状态的读/写假设在其它线程执行；
+	 * 不加锁直接遍历会读到半更新的树（悬垂模块指针、越界索引），
+	 * 而只取读锁会与同样持读锁的 `GenerateReplicationStructure` 并发读写同一模块。
+	 */
+	void ApplySimStateFromNetwork(const Chaos::FModuleNetDataArray& ModuleData);
+
+	/** 在读锁保护下从模拟树写出网络状态（与 ApplySimStateFromNetwork 对称） */
+	void BuildNetStateForNetwork(Chaos::FModuleNetDataArray& ModuleData);
+
 	/** 缓存根粒子句柄 */
 	void CacheRootParticle(IPhysicsProxyBase* Proxy);
 
@@ -158,7 +170,6 @@ public:
 	TUniquePtr<Chaos::FSimModuleTree>& AccessSimComponentTree() { return SimModuleTree; }
 
 	TUniquePtr<Chaos::FSimModuleTree> SimModuleTree;
-	Chaos::FAllInputs SimInputData;
 	bool bUsingNetworkPhysicsPrediction = false;
 
 	/** 物理线程当前使用的控制输入 */

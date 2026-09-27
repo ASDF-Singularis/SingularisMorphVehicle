@@ -2,6 +2,12 @@
 
 // Default input producer
 
+#include <PBDRigidsSolver.h>
+#include <Engine/World.h>
+#include <Physics/Experimental/PhysScene_Chaos.h>
+
+#include "Types/SingularisMorphVehicleInputUtils.h"
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleInputProducer)
 
 void USingularisMorphVehicleDefaultInputProducer::InitializeContainer(
@@ -12,7 +18,15 @@ void USingularisMorphVehicleDefaultInputProducer::InitializeContainer(
 {
 	Super::InitializeContainer(SetupData, NameMapOut, InInputQuantizationType);
 
+	// 容器重建会清零已捕获的输入，使拓扑变更（运行时增删模块）那一帧丢掉玩家输入；
+	// 先备份旧值，重建后按名称回填。生产者持有自己的名映射副本，
+	// 使回填不依赖调用方的重建顺序
+	const TArray<FModuleInputValue> PreviousValues = MergedInput.AccessInputValues();
+
 	MergedInput.Initialize(SetupData, NameMapOut);
+	SingularisMorphVehicleInputUtils::CarryOverValues(MergedInput, NameMapOut, InputNameMap, PreviousValues);
+
+	InputNameMap = NameMapOut;
 }
 
 void USingularisMorphVehicleDefaultInputProducer::BufferInput(
@@ -22,8 +36,6 @@ void USingularisMorphVehicleDefaultInputProducer::BufferInput(
 	EModuleInputBufferActionType BufferAction
 )
 {
-	//UE_LOGF(LogTemp, Warning, "BufferInput - InName %ls Val=%ls", *InName.ToString(), *InValue.ToString());
-
 	switch (BufferAction)
 	{
 	case EModuleInputBufferActionType::Override:
@@ -57,10 +69,6 @@ void USingularisMorphVehicleDefaultInputProducer::ProduceInput(
 	FModuleInputContainer& InOutContainer
 )
 {
-	//UE_LOGF(LogTemp, Warning, "ProduceInput - PhysicsStep %d, NumSteps %d", PhysicsStep, NumSteps);
-	//FInputInterface Inputs(InNameMap, MergedInput);
-	//UE_LOGF(LogTemp, Warning, ".. Throttle %ls", *Inputs.GetValue("Throttle").ToString());
-
 	// copy state out
 	InOutContainer = MergedInput;
 
@@ -79,14 +87,17 @@ void USingularisMorphVehiclePlaybackInputProducer::InitializeContainer(
 {
 	Super::InitializeContainer(SetupData, NameMapOut, InInputQuantizationType);
 
-	auto Seed = 123;
-	FRandomStream Random(Seed);
+	// 重建前先清空：运行时增删模块会再次调用本函数，追加会使缓冲单调增长，
+	// 且物理线程按帧号取到的是首次填充的陈旧条目
+	PlaybackBuffer.Reset();
+	PlaybackBuffer.Reserve(BufferLength);
+
+	FRandomStream Random(PlaybackSeed);
 
 	// Initialize a single container once
 	FModuleInputContainer InputsForFrame;
 	InputsForFrame.Initialize(SetupData, NameMapOut);
 
-	PlaybackBuffer.Reserve(BufferLength);
 	for (auto I = 0; I < BufferLength; I++)
 	{
 		// copy initialized container into array
@@ -153,18 +164,28 @@ void USingularisMorphVehicleRandomInputProducer::ProduceInput(
 	FModuleInputContainer& InOutContainer
 )
 {
-	// new control settings generated every ChangeInputFrequency number of frames (every frame is too quick)
-	// previous controls are held in the PlaybackContainer between the changes
-	if (PhysicsStep % ChangeInputFrequency == 0)
+	// 随机输入由「种子 + 求解器帧号分组」派生，而不是从实例随机流推进：
+	// 后者在回放（Resimulate）时会因流位置不同而产生与首次模拟不同的输入，
+	// 破坏网络预测的确定性。取不到求解器帧号时退化为按物理子步分组。
+	int32 GroupIndex = PhysicsStep;
+	if (UWorld* World = GetWorld())
 	{
-		// clear old input
-		PlaybackContainer.ZeroValues();
-
-		// generate new random input
-		FInputInterface Inputs(InNameMap, PlaybackContainer, InputQuantizationType);
-		Inputs.SetValue("Throttle", RandomStream.FRand());
-		Inputs.SetValue("Steering", 1.0f - 2.0f * RandomStream.FRand());
+		if (FPhysScene* Scene = World->GetPhysicsScene())
+		{
+			if (Chaos::FPhysicsSolver* Solver = Scene->GetSolver())
+				GroupIndex = Solver->GetCurrentFrame();
+		}
 	}
+
+	GroupIndex /= FMath::Max(ChangeInputFrequency, 1);
+
+	// 每 ChangeInputFrequency 帧更新一组控制量，期间沿用上一组（由帧号推导，无需额外状态）
+	FRandomStream Random(Seed + GroupIndex * 7919);
+	PlaybackContainer.ZeroValues();
+
+	FInputInterface Inputs(InNameMap, PlaybackContainer, InputQuantizationType);
+	Inputs.SetValue("Throttle", Random.FRand());
+	Inputs.SetValue("Steering", 1.0f - 2.0f * Random.FRand());
 
 	InOutContainer = PlaybackContainer;
 }

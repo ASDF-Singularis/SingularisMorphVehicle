@@ -41,7 +41,6 @@ public:
 #pragma region Actor Interface
 
 	virtual void BeginPlay() override;
-	virtual void Tick(float DeltaTime) override;
 
 #pragma endregion
 };

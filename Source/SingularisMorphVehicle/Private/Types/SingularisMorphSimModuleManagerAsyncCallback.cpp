@@ -30,6 +30,17 @@ DECLARE_CYCLE_STAT(
 	STATGROUP_SingularisMorphSimModuleManager
 );
 
+namespace
+{
+	/**
+	 * 单个载具网络数据允许的最大模块数。
+	 *
+	 * 位流中的模块数直接驱动 FNetBitArray 构造与数组扩容，损坏或伪造的包可据此
+	 * 请求巨量内存；正常载具的模块数在数十量级，故以硬上限拒绝异常包。
+	 */
+	constexpr uint32 MaxNetModulesPerVehicle = 4096;
+}
+
 /**
  * 模块化载具网络同步控制台变量（Console Variables）。
  * 通过控制台命令 `p.ModularVehicle.*` 在运行时动态调节网络复制行为。
@@ -151,6 +162,35 @@ bool FNetworkSingularisMorphVehicleInputs::NetSerialize(FArchive& Ar, class UPac
 		}
 
 		uint32 Number = InputStateData.Types.Num();
+		if (Number > MaxNetModulesPerVehicle)
+		{
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Error,
+				TEXT("[NetSerialize] Input token requests %u entries which exceeds the sanity limit - rejecting packet"
+				),
+				Number
+			);
+			bOutSuccess = false;
+			return false;
+		}
+
+		// 两个数组按各自长度独立反序列化，任一短于 Types 都会让下方按下标访问越界
+		if (InputStateData.DecayValues.Num() != static_cast<int32>(Number))
+		{
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Error,
+				TEXT(
+					"[NetSerialize] Input token arrays are inconsistent (%u types vs %d decay flags) - rejecting packet"
+				),
+				Number,
+				InputStateData.DecayValues.Num()
+			);
+			bOutSuccess = false;
+			return false;
+		}
+
 		if (Ar.IsLoading())
 			InputValues.SetNum(Number);
 
@@ -184,7 +224,12 @@ void FNetworkSingularisMorphVehicleInputs::InterpolateData(
 	const auto& MinInput = static_cast<const FNetworkSingularisMorphVehicleInputs&>(MinData);
 	const auto& MaxInput = static_cast<const FNetworkSingularisMorphVehicleInputs&>(MaxData);
 
-	const float LerpFactor = (LocalFrame - MinInput.LocalFrame) / (MaxInput.LocalFrame - MinInput.LocalFrame);
+	// 帧差为零（历史只有一帧或两帧时间戳相同）时退化为保持最小帧数据，
+	// 直接相除会得到 Inf/NaN 并经 Lerp 污染模块状态
+	const int32 FrameSpan = MaxInput.LocalFrame - MinInput.LocalFrame;
+	const float LerpFactor = FrameSpan > 0
+		                         ? static_cast<float>(LocalFrame - MinInput.LocalFrame) / static_cast<float>(FrameSpan)
+		                         : 1.0f;
 
 	VehicleInputs.Reverse = MinInput.VehicleInputs.Reverse;
 	VehicleInputs.KeepAwake = MinInput.VehicleInputs.KeepAwake;
@@ -250,10 +295,8 @@ void FNetworkSingularisMorphVehicleStates::ApplyData(UActorComponent* NetworkCom
 	{
 		if (FSingularisMorphVehicleSimulation* VehicleSimulation = ModularBaseComponent->VehicleSimulationPT.Get())
 		{
-			// 模拟树在 Terminate 之后、Initialize 之前为空，重演落帧时可能命中该窗口
-			if (TUniquePtr<Chaos::FSimModuleTree>& SimTree = VehicleSimulation->AccessSimComponentTree();
-				SimTree.IsValid())
-				SimTree->SetSimState(ModuleData);
+			// 应用网络状态需与物理线程的树增删互斥，统一走带锁入口
+			VehicleSimulation->ApplySimStateFromNetwork(ModuleData);
 		}
 	}
 }
@@ -267,8 +310,11 @@ void FNetworkSingularisMorphVehicleStates::BuildData(const UActorComponent* Netw
 		USingularisMorphVehicleSimulationComponent>(NetworkComponent);
 	if (!ModularBaseComponent) return;
 
-	if (const FSingularisMorphVehicleSimulation* VehicleSimulation = ModularBaseComponent->VehicleSimulationPT.Get())
-		VehicleSimulation->GetSimComponentTree()->SetNetState(ModuleData);
+	if (FSingularisMorphVehicleSimulation* VehicleSimulation = ModularBaseComponent->VehicleSimulationPT.Get())
+	{
+		// 写出网络状态需与物理线程的树增删互斥，统一走带锁入口
+		VehicleSimulation->BuildNetStateForNetwork(ModuleData);
+	}
 }
 
 bool FNetworkSingularisMorphVehicleStates::NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
@@ -282,6 +328,19 @@ bool FNetworkSingularisMorphVehicleStates::NetSerialize(FArchive& Ar, class UPac
 
 	uint32 NumNetModules = ModuleData.Num();
 	Ar.SerializeIntPacked(NumNetModules);
+
+	// 模块数来自对端位流且直接驱动下方分配，超限即整包判失败
+	if (NumNetModules > MaxNetModulesPerVehicle)
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Error,
+			TEXT("[NetSerialize] Packet declares %u modules which exceeds the sanity limit - rejecting packet"),
+			NumNetModules
+		);
+		bOutSuccess = false;
+		return false;
+	}
 
 	// Array of bits to mark which modules to serialize or not
 	FNetBitArray ModulesBitArray(NumNetModules);
@@ -306,6 +365,21 @@ bool FNetworkSingularisMorphVehicleStates::NetSerialize(FArchive& Ar, class UPac
 
 			const int32 SimArrayIndex = static_cast<int32>(SimArrayIndexUnsigned) - 1;
 			// Convert back to signed and adjust
+
+			// 合法发送端的树索引恒为非负（-1 是“空槽”的编码值，对应类型哈希 0）。
+			// 负索引会被引擎 SetSimState/SetNetState 的上界检查放行而越界访问，必须在此拦下
+			if (SimArrayIndex < 0)
+			{
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Error,
+					TEXT("[NetSerialize] Module %u declares a negative tree index (%d) - rejecting packet"),
+					I,
+					SimArrayIndex
+				);
+				bOutSuccess = false;
+				return false;
+			}
 
 			if (TSharedPtr<Chaos::FModuleNetData> Data = Chaos::FModuleFactoryRegister::Get().GenerateNetData(
 				ModuleTypeHash,
@@ -446,6 +520,38 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 	};
 
 	const uint32 NumNetModules = VehicleStateData.Hashes.Num();
+
+	// 模块数来自对端位流且直接驱动下方分配，超限即整包判失败
+	if (NumNetModules > MaxNetModulesPerVehicle)
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Error,
+			TEXT("[DeltaNetSerialize] Packet declares %u modules which exceeds the sanity limit - rejecting packet"),
+			NumNetModules
+		);
+		bOutSuccess = false;
+		return false;
+	}
+
+	// 三个数组按各自长度独立反序列化，任一短于 Hashes 都会让下方按下标访问越界
+	if (VehicleStateData.Indexes.Num() != static_cast<int32>(NumNetModules) ||
+		VehicleStateData.ModuleShouldSerialize.Num() != static_cast<int32>(NumNetModules))
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Error,
+			TEXT(
+				"[DeltaNetSerialize] State token arrays are inconsistent (%u hashes vs %d indexes vs %d flags) - rejecting packet"
+			),
+			NumNetModules,
+			VehicleStateData.Indexes.Num(),
+			VehicleStateData.ModuleShouldSerialize.Num()
+		);
+		bOutSuccess = false;
+		return false;
+	}
+
 	bOutSuccess = true;
 	TMap<FName, uint32> SerializationStash;
 	SerializationStash.Add(StashServerFrameKey, ServerFrame);
@@ -470,6 +576,20 @@ bool FNetworkSingularisMorphVehicleStates::DeltaNetSerialize(FArchive& Ar, UPack
 		{
 			const int32 SimArrayIndex = VehicleStateData.Indexes[I];
 			const uint32 ModuleTypeHash = VehicleStateData.Hashes[I];
+
+			// 合法发送端的树索引恒为非负；负索引会被引擎的上界检查放行而越界访问
+			if (SimArrayIndex < 0)
+			{
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Error,
+					TEXT("[DeltaNetSerialize] Module %u declares a negative tree index (%d) - rejecting packet"),
+					I,
+					SimArrayIndex
+				);
+				bOutSuccess = false;
+				return false;
+			}
 
 			if (TSharedPtr<Chaos::FModuleNetData> Data = Chaos::FModuleFactoryRegister::Get().GenerateNetData(
 				ModuleTypeHash,
@@ -583,7 +703,11 @@ void FNetworkSingularisMorphVehicleStates::InterpolateData(
 	const auto& MinState = static_cast<const FNetworkSingularisMorphVehicleStates&>(MinData);
 	const auto& MaxState = static_cast<const FNetworkSingularisMorphVehicleStates&>(MaxData);
 
-	const float LerpFactor = (LocalFrame - MinState.LocalFrame) / (MaxState.LocalFrame - MinState.LocalFrame);
+	// 帧差为零时退化为保持最小帧状态，避免除零产生的 NaN 污染模块状态
+	const int32 FrameSpan = MaxState.LocalFrame - MinState.LocalFrame;
+	const float LerpFactor = FrameSpan > 0
+		                         ? static_cast<float>(LocalFrame - MinState.LocalFrame) / static_cast<float>(FrameSpan)
+		                         : 1.0f;
 
 	if (ModuleData.Num() != MinState.ModuleData.Num() || ModuleData.Num() != MaxState.ModuleData.Num())
 	{

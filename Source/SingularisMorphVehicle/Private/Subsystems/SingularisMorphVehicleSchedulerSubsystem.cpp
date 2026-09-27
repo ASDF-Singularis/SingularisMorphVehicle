@@ -3,6 +3,7 @@
 #include <PBDRigidsSolver.h>
 #include <Engine/World.h>
 
+#include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 #include "Types/SingularisMorphModuleInputTokenStore.h"
 
@@ -30,14 +31,21 @@ void USingularisMorphVehicleSchedulerSubsystem::PostInitialize()
 {
 	Super::PostInitialize();
 
-	// 1) 获取当前 World 的 Chaos 物理场景，断言确保物理系统已正确初始化
+	// 1) 获取当前 World 的 Chaos 物理场景。编辑器预览等无物理场景的 World 同样会创建本子系统，
+	//    此时只告警并跳过绑定（断言会在发行版下直接崩溃）
 	PhysicsScene = GetWorld()->GetPhysicsScene();
-	checkf(
-		PhysicsScene,
-		TEXT(
-			"USingularisMorphVehicleSchedulerSubsystem: PhysicsScene is null, please ensure that the physics system is initialized before using this subsystem."
-		)
-	);
+	if (!PhysicsScene)
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Warning,
+			TEXT(
+				"[SchedulerSubsystem] Physics scene is unavailable for world %s - vehicle scheduling is disabled (the physics system must be initialized before this subsystem)"
+			),
+			*GetNameSafe(GetWorld())
+		);
+		return;
+	}
 
 	// 2) 注册所有回调（物理 Tick、网络复制、异步回调对象）
 	BindEvent();
@@ -105,19 +113,23 @@ void USingularisMorphVehicleSchedulerSubsystem::UnregisterVehicleComponent(
  */
 void USingularisMorphVehicleSchedulerSubsystem::OnNetDriverCreated(UWorld* World, UNetDriver* NetDriver)
 {
-	// 1) 守卫
+	// 1) 守卫：全局委托会对所有 World 触发，只处理本子系统所属的 World
+	if (World != GetWorld()) return;
 	if (!IsValid(NetDriver)) return;
 
 	// 2) 注册网络令牌数据存储，防御性编程，不信任时序
 	if (NetDriver->GetNetTokenStore())
-		RegisterNetTokenDataStores(NetDriver);
-	else
 	{
-		NetDriver->OnNetTokenStoreReady().AddUObject(
-			this,
-			&USingularisMorphVehicleSchedulerSubsystem::OnNetTokenStoreReady
-		);
+		RegisterNetTokenDataStores(NetDriver);
+		return;
 	}
+
+	// 3) 令牌存储尚未就绪：记录句柄以便解绑，避免子系统销毁后仍被回调
+	const FDelegateHandle Handle = NetDriver->OnNetTokenStoreReady().AddUObject(
+		this,
+		&USingularisMorphVehicleSchedulerSubsystem::OnNetTokenStoreReady
+	);
+	NetTokenStoreReadyHandles.Add(NetDriver, Handle);
 }
 
 /**
@@ -126,12 +138,15 @@ void USingularisMorphVehicleSchedulerSubsystem::OnNetDriverCreated(UWorld* World
  * 当 NetDriver 在创建时 NetTokenStore 尚未初始化时，此回调将被触发。
  * 由于委托可能在对象已销毁后触发，需要先校验 NetDriver 有效性。
  */
-void USingularisMorphVehicleSchedulerSubsystem::OnNetTokenStoreReady(UNetDriver* NetDriver) const
+void USingularisMorphVehicleSchedulerSubsystem::OnNetTokenStoreReady(UNetDriver* NetDriver)
 {
 	// 1) 守卫
 	if (!IsValid(NetDriver)) return;
 
-	// 2) 注册网络令牌数据存储
+	// 2) 消费句柄：每个驱动的延迟注册只执行一次
+	NetTokenStoreReadyHandles.Remove(NetDriver);
+
+	// 3) 注册网络令牌数据存储
 	RegisterNetTokenDataStores(NetDriver);
 }
 
@@ -379,6 +394,14 @@ void USingularisMorphVehicleSchedulerSubsystem::UnbindEvent()
 	}
 	FWorldDelegates::OnNetDriverCreated.Remove(OnNetDriverCreatedHandle);
 
+	// 1a) 解绑尚未就绪的 NetTokenStore 延迟回调，避免向已销毁子系统回调
+	for (const TPair<TWeakObjectPtr<UNetDriver>, FDelegateHandle>& Pair : NetTokenStoreReadyHandles)
+	{
+		if (UNetDriver* NetDriver = Pair.Key.Get())
+			NetDriver->OnNetTokenStoreReady().Remove(Pair.Value);
+	}
+	NetTokenStoreReadyHandles.Empty();
+
 	// 2) 注销异步回调对象（从 Solver 移除并释放内存）。
 	//    无论 Solver 是否可用都必须置空句柄，避免后续回调访问已释放对象。
 	if (AsyncCallback)
@@ -457,11 +480,11 @@ void USingularisMorphVehicleSchedulerSubsystem::ParallelUpdateVehicles()
 	// 异步步骤的单步时长（物理子步的累计时间）
 	const double AsyncDeltaTime = AsyncCallback->GetSolver()->GetAsyncDeltaTime();
 
-	// 1) 弹出异步输出并累积新创建的模块事件
+	// 1) 弹出异步输出并按载具累积新创建的模块事件。
 	//
-	// 为每个载具槽位预分配一个空的事件容器，后续从异步输出中填充。
-	TArray<Chaos::FCreatedModules> CombinedNewlyCreatedModuleGuids;
-	CombinedNewlyCreatedModuleGuids.Init(Chaos::FCreatedModules{}, VehicleSimulationComponents.Num());
+	// 按载具指针（而非插槽下标）配对：注入时的载具顺序与消费时刻可能因帧内
+	// 注册/注销而不同，按下标配对会把模块事件派发给别的载具
+	TMap<USingularisMorphVehicleSimulationComponent*, TArray<Chaos::FCreatedModule>> CombinedNewlyCreatedModuleGuids;
 
 	// 判断是否有新的异步输出可用：
 	// 若物理线程推进到了比当前缓存的最新输出更远的时刻，则需要弹出新数据。
@@ -474,17 +497,17 @@ void USingularisMorphVehicleSchedulerSubsystem::ParallelUpdateVehicles()
 		while ((NextAsyncOutput = AsyncCallback->PopOutputData_External()))
 		{
 			// 遍历当前输出帧中每个载具的异步结果
-			for (auto VehicleIdx = 0; VehicleIdx < NextAsyncOutput->VehicleOutputs.Num(); ++VehicleIdx)
+			for (const TUniquePtr<FSingularisMorphVehicleAsyncOutput>& VehicleOutput : NextAsyncOutput->VehicleOutputs)
 			{
-				if (!NextAsyncOutput->VehicleOutputs[VehicleIdx])
+				if (!VehicleOutput || !VehicleOutput->Vehicle)
 					continue;
 
 				// 从该载具的模拟输出中取出本轮新创建的模块 GUID 列表
 				TArray<Chaos::FCreatedModule>& NewlyCreatedModuleGuids =
-					NextAsyncOutput->VehicleOutputs[VehicleIdx]->VehicleSimOutput.NewlyCreatedModuleGuids;
-				// 追加到累积容器中（跨帧去重由消费端处理）
-				if (NewlyCreatedModuleGuids.Num() > 0 && VehicleIdx < CombinedNewlyCreatedModuleGuids.Num())
-					CombinedNewlyCreatedModuleGuids[VehicleIdx].ModuleEvents.Append(NewlyCreatedModuleGuids);
+					VehicleOutput->VehicleSimOutput.NewlyCreatedModuleGuids;
+
+				if (!NewlyCreatedModuleGuids.IsEmpty())
+					CombinedNewlyCreatedModuleGuids.FindOrAdd(VehicleOutput->Vehicle).Append(NewlyCreatedModuleGuids);
 			}
 			// 将当前输出帧移交 OutputRecord 双缓冲（自动管理先前/后续帧的角色切换）
 			OutputRecord.ConsumeOutput(MoveTemp(NextAsyncOutput));
@@ -496,7 +519,7 @@ void USingularisMorphVehicleSchedulerSubsystem::ParallelUpdateVehicles()
 	// OutputRecord 持有前后两帧异步输出，本步骤根据当前游戏时间在两者之间插值。
 	FSingularisMorphChaosSimModuleManagerAsyncOutput* PreviousOutput = OutputRecord.GetPreviousOutput();
 	FSingularisMorphChaosSimModuleManagerAsyncOutput* NextOutput = OutputRecord.GetNextOutput();
-	const UWorld* World = PhysicsScene->GetOwningWorld();
+	const UWorld* World = GetWorld();
 	const FSingularisMorphChaosSimModuleManagerAsyncInput* AsyncInput = AsyncCallback->GetProducerInputData_External();
 
 	// 三者缺一不可：World 为载具提供物理场景上下文，PreviousOutput 保证有数据可插值，
@@ -520,17 +543,25 @@ void USingularisMorphVehicleSchedulerSubsystem::ParallelUpdateVehicles()
 
 	// 3) 对所有载具组件执行并行更新（读取异步输出并分发给各模拟模块）
 	//
-	// 注意：此处 bForceSingleThread = true，并行更新在单线程上串行执行。
-	// 这是为了规避 ParallelFor 多线程下弱指针 Pin() 导致的竞态风险。
+	// 注意：此处 bForceSingleThread = true。载具级并行被有意禁用：并行更新会把模拟结果
+	// 写入组件变换（SetRelativeTransform/TeleportPhysics）与动画数据，而组件变换的修改
+	// 必须在游戏线程完成，强制单线程使该循环仍在调用线程（游戏线程）上串行执行。
+	// 否则应按 FSingularisMorphSimModuleDebugParams::EnableMultithreading 决定并行度。
 	auto UpdateVehicleParallel = [&CombinedNewlyCreatedModuleGuids, this](const int32 Idx)
 	{
 		// 弱指针升级为强引用，防止迭代期间对象被 GC 回收
 		const TStrongObjectPtr<USingularisMorphVehicleSimulationComponent> StrongPtr =
 			VehicleSimulationComponents[Idx].Pin();
-		if (StrongPtr.IsValid())
-			// 将对应槽位的新建模块事件传给组件，组件内部完成：
-			// a) 清理上帧输出；b) 读取异步输出数据；c) 初始化新模块
-			StrongPtr->ParallelUpdate(CombinedNewlyCreatedModuleGuids[Idx]);
+		if (!StrongPtr.IsValid()) return;
+
+		// 按载具指针取出属于它的新建模块事件（无事件时传入空列表）
+		Chaos::FCreatedModules ModuleEvents;
+		if (const TArray<Chaos::FCreatedModule>* Found = CombinedNewlyCreatedModuleGuids.Find(StrongPtr.Get()))
+			ModuleEvents.ModuleEvents = *Found;
+
+		// 将对应槽位的新建模块事件传给组件，组件内部完成：
+		// a) 清理上帧输出；b) 读取异步输出数据；c) 初始化新模块
+		StrongPtr->ParallelUpdate(ModuleEvents);
 	};
 
 	ParallelFor(VehicleSimulationComponents.Num(), UpdateVehicleParallel, true);

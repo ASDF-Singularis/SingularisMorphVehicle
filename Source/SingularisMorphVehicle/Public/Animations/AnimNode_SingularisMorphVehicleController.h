@@ -40,4 +40,7 @@ private:
 
 	TArray<FSingularisMorphModuleLookupData> Modules;
 	const FSingularisMorphVehicleAnimationInstanceProxy* AnimInstanceProxy = nullptr;
+
+	/** 上次重建骨骼引用时的模块集合签名（数量 + 骨骼名），用于识别等量替换/重排 */
+	uint32 BoneReferenceSignature = 0;
 };

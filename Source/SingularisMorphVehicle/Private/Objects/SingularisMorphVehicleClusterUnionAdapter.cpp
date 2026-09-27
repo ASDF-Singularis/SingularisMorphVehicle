@@ -11,10 +11,34 @@
 void USingularisMorphVehicleClusterUnionAdapter::Initialize(const FSingularisMorphVehiclePhysicsAdapterContext& Context)
 {
 	// 1) 通过 Context 获取 Owner Actor 并解析集群联合引用
-	if (AActor* Owner = Context.SimulationComponent ? Context.SimulationComponent->GetOwner() : nullptr)
-		ResolveClusterUnionComponent(Owner);
+	AActor* Owner = Context.SimulationComponent ? Context.SimulationComponent->GetOwner() : nullptr;
+	if (!IsValid(Owner))
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Error,
+			TEXT("[ClusterUnionAdapter] Initialize called without a valid owner - the adapter stays idle")
+		);
+		return;
+	}
 
-	if (!ClusterUnionComponent.IsValid()) return;
+	ResolveClusterUnionComponent(Owner);
+	if (!ClusterUnionComponent.IsValid())
+	{
+		// 解析失败会使载具永不模拟（IsReady 恒 false，每帧静默早退），
+		// 属于最难定位的一类故障，必须显式告警
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Error,
+			TEXT(
+				"[ClusterUnionAdapter] Failed to resolve a %s on %s from reference '%s' - check ClusterUnionComponentReference"
+			),
+			*USingularisMorphVehicleClusterUnionComponent::StaticClass()->GetName(),
+			*GetNameSafe(Owner),
+			*ClusterUnionComponentReference.PathToComponent
+		);
+		return;
+	}
 
 	// 2) 防止重复绑定（Initialize 幂等）
 	if (bEventsBound) return;
@@ -81,24 +105,24 @@ FTransform USingularisMorphVehicleClusterUnionAdapter::GetReferenceTransform() c
 
 FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnionAdapter::ConsumeSnapshot()
 {
-	// 1) 消费即清除脏标记：无论能否构建出实体，本次变更已处理完毕。
-	//    子件集合为空时返回空快照，由消费端清除全部模块（载具解体）
-	bDirty = false;
-
-	// 2) 集群联合组件与物理代理有效性检查
+	// 1) 前置条件未满足时不消费脏标记：集群事件不会重发同一次变更，
+	//    在此清除标记会让该次变更永久丢失；保留标记由下一个物理帧重试
 	if (!ClusterUnionComponent.IsValid()) return {};
 
 	const Chaos::FClusterUnionPhysicsProxy* Proxy = ClusterUnionComponent->GetPhysicsProxyPublic();
 	if (!Proxy) return {};
 
-	const auto& ChildParticles = Proxy->GetSyncedData_External().ChildParticles;
-	if (ChildParticles.IsEmpty()) return {};
-
-	// 3) 获取物理场景，用于粒子代理反查所属组件
 	const UWorld* World = GetWorld();
 	if (!World) return {};
 	const FPhysScene* PhysScene = World->GetPhysicsScene();
 	if (!PhysScene) return {};
+
+	// 2) 前置条件齐备：本次变更已可处理，消费脏标记。
+	//    子件集合为空时返回空快照，由消费端清除全部模块（载具解体）
+	bDirty = false;
+
+	const auto& ChildParticles = Proxy->GetSyncedData_External().ChildParticles;
+	if (ChildParticles.IsEmpty()) return {};
 
 	// 4) 遍历集群子粒子，通过粒子代理反查所属物理组件后构建完整快照。
 	//    实体只描述物理信息（组件 + 粒子数据），SU 组件的查询由消费端
@@ -133,8 +157,25 @@ FSingularisMorphVehiclePhysicsAdapterSnapshot USingularisMorphVehicleClusterUnio
 void USingularisMorphVehicleClusterUnionAdapter::ResolveClusterUnionComponent(AActor* Owner)
 {
 	if (!IsValid(Owner)) return;
-	if (UActorComponent* ResolvedComp = ClusterUnionComponentReference.GetComponent(Owner))
-		ClusterUnionComponent = Cast<USingularisMorphVehicleClusterUnionComponent>(ResolvedComp);
+
+	UActorComponent* ResolvedComp = ClusterUnionComponentReference.GetComponent(Owner);
+	if (!ResolvedComp)
+	{
+		// 引用为空或路径无效（如仅填写裸组件名而非完整路径）
+		return;
+	}
+
+	ClusterUnionComponent = Cast<USingularisMorphVehicleClusterUnionComponent>(ResolvedComp);
+	if (!ClusterUnionComponent.IsValid())
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Error,
+			TEXT("[ClusterUnionAdapter] Reference on %s resolved to %s which is not a cluster union component"),
+			*GetNameSafe(Owner),
+			*GetNameSafe(ResolvedComp)
+		);
+	}
 }
 
 void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentAdded(

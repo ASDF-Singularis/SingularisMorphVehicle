@@ -5,6 +5,8 @@
 #include <GameFramework/Actor.h>
 #include <GeometryCollection/GeometryCollectionComponent.h>
 
+#include "SingularisMorphVehicle.h"
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleClusterUnionComponent)
 
 USingularisMorphVehicleClusterUnionComponent::USingularisMorphVehicleClusterUnionComponent(
@@ -109,6 +111,10 @@ void USingularisMorphVehicleClusterUnionComponent::AddComponentToClusterByType(U
 {
 	if (!IsValid(Component)) return;
 
+	// 本路径以「一个物理组件对应一个模拟模块」为装配单元；同一组件贡献多个物理体时，
+	// 集群子件无法分别绑定到模块，骨骼网格体载具需要专用的骨骼网格体适配器
+	// （骨骼与模块的对应关系由适配器自身携带）
+
 	// 1) 静态网格体：无有效物理体时无法加入集群
 	if (UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(Component))
 	{
@@ -119,8 +125,7 @@ void USingularisMorphVehicleClusterUnionComponent::AddComponentToClusterByType(U
 		return;
 	}
 
-	// 2) 骨骼网格体：每个物理体各占一个集群子件，
-	//    模块通过粒子索引与骨骼一一对应定位
+	// 2) 骨骼网格体：每个物理体各占一个集群子件
 	if (USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(Component))
 	{
 		TArray<int32> BoneIds;
@@ -128,8 +133,22 @@ void USingularisMorphVehicleClusterUnionComponent::AddComponentToClusterByType(U
 		for (auto I = 0; I < SkeletalMeshComponent->Bodies.Num(); ++I)
 			BoneIds.Add(I);
 
-		if (!BoneIds.IsEmpty())
-			AddComponentToCluster(SkeletalMeshComponent, BoneIds);
+		if (BoneIds.IsEmpty()) return;
+
+		if (BoneIds.Num() > 1)
+		{
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Warning,
+				TEXT(
+					"[ClusterUnionComponent] %s contributes %d cluster particles - the cluster union adapter binds one module per component and cannot map them separately; skeletal mesh vehicles require a dedicated skeletal mesh adapter"
+				),
+				*GetNameSafe(SkeletalMeshComponent),
+				BoneIds.Num()
+			);
+		}
+
+		AddComponentToCluster(SkeletalMeshComponent, BoneIds);
 		return;
 	}
 

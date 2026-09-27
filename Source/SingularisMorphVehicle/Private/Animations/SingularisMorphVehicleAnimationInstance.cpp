@@ -1,5 +1,7 @@
 #include "Animations/SingularisMorphVehicleAnimationInstance.h"
 
+#include <Misc/ScopeLock.h>
+
 #include "Actors/SingularisMorphVehicleClusterPawn.h"
 #include "Components/SingularisMorphVehicleSimulationComponent.h"
 
@@ -35,6 +37,10 @@ void FSingularisMorphVehicleAnimationInstanceProxy::PreUpdate(
 	const USingularisMorphVehicleSimulationComponent* ModularVehicleComponent = VehicleAnimInstance->
 		GetModularVehicleComponent();
 	if (!ModularVehicleComponent) return;
+
+	// 槽位表由游戏线程写入（重建、输出分发），本函数在动画线程执行；
+	// 并行动画求值开启时两者可同时运行，读取期间必须持有同一把锁
+	FScopeLock AnimationLock(&ModularVehicleComponent->GetModuleAnimationSetupsLock());
 
 	// 1) 运行时变形会重建模块集合，集合变化时重建实例列表，
 	//    保持实例下标与 ModuleAnimationSetups 一一对应
@@ -98,7 +104,9 @@ void FSingularisMorphVehicleAnimationInstanceProxy::SyncModuleAnimData(
 
 		ModuleInstance.LocOffset = ModuleAnimation.LocOffset;
 		ModuleInstance.RotOffset = ModuleAnimation.RotOffset;
-		ModuleInstance.Flags |= ModuleAnimation.AnimFlags;
+
+		// 槽位标志由游戏线程逐帧重建，此处直接赋值：按位或会让已停止动画的通道永久置位
+		ModuleInstance.Flags = ModuleAnimation.AnimFlags;
 	}
 }
 

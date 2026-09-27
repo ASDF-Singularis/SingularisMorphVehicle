@@ -3,9 +3,23 @@
 #include "AnimationRuntime.h"
 #include "Animation/AnimStats.h"
 #include "Animation/AnimTrace.h"
+#include "Animations/SingularisMorphVehicleAnimationInstance.h"
 #include "SimModule/SimulationModuleBase.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AnimNode_SingularisMorphVehicleController)
+
+namespace
+{
+	/** 模块动画集合签名：模块数量与骨骼名共同决定骨骼引用是否仍然有效 */
+	uint32 ComputeModuleAnimDataSignature(const TArray<FSingularisMorphModuleAnimationData>& ModuleAnimData)
+	{
+		auto Signature = GetTypeHash(ModuleAnimData.Num());
+		for (const FSingularisMorphModuleAnimationData& Module : ModuleAnimData)
+			Signature = HashCombine(Signature, GetTypeHash(Module.BoneName));
+
+		return Signature;
+	}
+}
 
 
 FAnimNode_SingularisMorphVehicleController::FAnimNode_SingularisMorphVehicleController()
@@ -22,6 +36,12 @@ void FAnimNode_SingularisMorphVehicleController::GatherDebugData(FNodeDebugData&
 	DebugLine += ")";
 
 	DebugData.AddDebugItem(DebugLine);
+
+	if (!AnimInstanceProxy)
+	{
+		ComponentPose.GatherDebugData(DebugData);
+		return;
+	}
 
 	const TArray<FSingularisMorphModuleAnimationData>& AnimData = AnimInstanceProxy->GetModuleAnimData();
 	for (const FSingularisMorphModuleLookupData& Module : Modules)
@@ -68,6 +88,9 @@ void FAnimNode_SingularisMorphVehicleController::EvaluateSkeletalControl_AnyThre
 	check(OutBoneTransforms.Num() == 0);
 
 	ANIM_MT_SCOPE_CYCLE_COUNTER_VERBOSE(SingularisMorphVehicleController, !IsInGameThread());
+
+	// 代理类型不匹配（节点被放入非载具动画蓝图）时无数据可施加，保持输入姿态
+	if (!AnimInstanceProxy) return;
 
 	const TArray<FSingularisMorphModuleAnimationData>& ModuleAnimData = AnimInstanceProxy->GetModuleAnimData();
 
@@ -161,9 +184,10 @@ bool FAnimNode_SingularisMorphVehicleController::IsValidToEvaluate(
 {
 	if (AnimInstanceProxy)
 	{
-		// Note sure the best way to initilaize the animation since vehicle construction happens quite late on BeginPlay
+		// 骨骼引用必须与当前模块集合一一对应：仅比较数量会漏判“等量替换/重排”
+		// （删一个再加一个），使动画被施加到已错位的骨骼上且无法自愈
 		const TArray<FSingularisMorphModuleAnimationData>& ModuleAnimData = AnimInstanceProxy->GetModuleAnimData();
-		if (ModuleAnimData.Num() != Modules.Num())
+		if (ComputeModuleAnimDataSignature(ModuleAnimData) != BoneReferenceSignature)
 			InitializeBoneReferences(RequiredBones);
 	}
 
@@ -182,11 +206,22 @@ void FAnimNode_SingularisMorphVehicleController::Initialize_AnyThread(const FAni
 {
 	FAnimNode_SkeletalControlBase::Initialize_AnyThread(Context);
 
-	AnimInstanceProxy = static_cast<FSingularisMorphVehicleAnimationInstanceProxy*>(Context.AnimInstanceProxy);
+	// 类型校验：节点被放入非载具动画蓝图时代理类型不匹配，直接 static_cast 后使用即为未定义行为。
+	// 代理由 UAnimInstance 创建，故以动画实例类型为判据（FAnimInstanceProxy 不提供代理自身的类型查询）
+	AnimInstanceProxy = Context.AnimInstanceProxy &&
+	                    Cast<USingularisMorphVehicleAnimationInstance>(
+		                    Context.AnimInstanceProxy->GetAnimInstanceObject()
+	                    )
+		                    ? static_cast<FSingularisMorphVehicleAnimationInstanceProxy*>(Context.AnimInstanceProxy)
+		                    : nullptr;
+
+	BoneReferenceSignature = 0;
 }
 
 void FAnimNode_SingularisMorphVehicleController::InitializeBoneReferences(const FBoneContainer& RequiredBones)
 {
+	if (!AnimInstanceProxy) return;
+
 	const TArray<FSingularisMorphModuleAnimationData>& ModuleAnimData = AnimInstanceProxy->GetModuleAnimData();
 	const int32 NumModules = ModuleAnimData.Num();
 	Modules.Empty(NumModules);
@@ -206,4 +241,6 @@ void FAnimNode_SingularisMorphVehicleController::InitializeBoneReferences(const 
 			return L.BoneReference.BoneIndex < R.BoneReference.BoneIndex;
 		}
 	);
+
+	BoneReferenceSignature = ComputeModuleAnimDataSignature(ModuleAnimData);
 }

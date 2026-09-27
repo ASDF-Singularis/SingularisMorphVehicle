@@ -12,8 +12,8 @@ ASingularisMorphVehicleClusterActor::ASingularisMorphVehicleClusterActor()
 	bReplicates = true;
 	SetReplicatingMovement(true);
 
-	PrimaryActorTick.bStartWithTickEnabled = true;
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.bCanEverTick = false;
 
 	// 2) 创建集群联合组件作为根组件
 	VehicleClusterUnionComponent = CreateDefaultSubobject<USingularisMorphVehicleClusterUnionComponent>(
@@ -48,9 +48,4 @@ void ASingularisMorphVehicleClusterActor::BeginPlay()
 	// 集群子件组装由集群联合组件统一完成（仅权威端生效）
 	if (VehicleClusterUnionComponent)
 		VehicleClusterUnionComponent->AddOwnedComponentsToCluster();
-}
-
-void ASingularisMorphVehicleClusterActor::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
 }

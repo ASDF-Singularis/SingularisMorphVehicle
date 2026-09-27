@@ -56,12 +56,12 @@ public:
 	)
 	float MaxTorque = 200.0f;
 
-	/** 最大转速（RPM） */
+	/** 最大转速（RPM，上限受引擎设置的 uint16 存储限制） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点引擎仿真单元|转速",
-		meta = (DisplayName = "最大RPM")
+		meta = (DisplayName = "最大RPM", ClampMin = "1", UIMin = "1", ClampMax = "65535", UIMax = "65535")
 	)
 	int32 MaxRPM = 5000;
 

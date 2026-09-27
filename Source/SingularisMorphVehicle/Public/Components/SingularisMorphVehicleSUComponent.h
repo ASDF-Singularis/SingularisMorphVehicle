@@ -106,6 +106,14 @@ private:
 	 */
 	TSharedPtr<Chaos::FModuleNetData> ModuleSimState{};
 
+	/**
+	 * BeginPlay 时成功注册到映射子系统的物理组件（弱引用）。
+	 *
+	 * EndPlay 不再重新解析 DrivenComponent：驱动组件可能已先于本组件销毁，
+	 * 重新解析失败会使映射表中的条目永久残留；以注册时记录的目标为准注销。
+	 */
+	TWeakObjectPtr<UPrimitiveComponent> MappedPrimitiveComponent{};
+
 #pragma endregion
 
 public:
@@ -141,7 +149,7 @@ public:
 	virtual int32 GetAnimationSetupIndex() const override { return AnimationSetupIndex; }
 	virtual const FVector& GetAnimationOffset() const override { return AnimationOffset; }
 
-	virtual TArray<FModuleInputSetup> GetInputConfig() const override { return InputConfig; }
+	virtual const TArray<FModuleInputSetup>& GetInputConfig() const override { return InputConfig; }
 
 	virtual int32 GetTreeIndex() const override { return TreeIndex; }
 	virtual void SetTreeIndex(const int32 NewValue) override;
