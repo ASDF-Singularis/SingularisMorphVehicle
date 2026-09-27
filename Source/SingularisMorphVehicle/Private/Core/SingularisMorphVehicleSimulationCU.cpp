@@ -718,8 +718,8 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 						}
 					}
 
-					// 悬挂射线开关关闭时不做落点解算、不写地面摩擦与地面交互，
-					// 弹簧长度退回最大行程（与悬挂 Simulate 的兜底分支一致）：
+					// 悬挂射线开关关闭或无命中时不做落点解算、不写地面摩擦与地面交互：
+					// 行程距离取最大长度，悬挂据此解出零接触压缩量（车轮全伸张、无地面反力）。
 					// 该开关改变物理结果，仅用于调试对比，不是纯显示开关。
 					float Offset = Suspension->GetMaxSpringLength();
 					if (bHasActualHit && GSingularisMorphVehicleDebugParams.SuspensionRaycastsEnabled)
