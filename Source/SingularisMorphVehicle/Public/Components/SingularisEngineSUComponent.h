@@ -25,19 +25,6 @@ class SINGULARISMORPHVEHICLE_API USingularisEngineSUComponent : public USingular
 public:
 #pragma region Parameter
 
-	/** 链接的离合器组件（单向引用） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|链接",
-		meta = (
-			DisplayName = "链接离合器",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisClutchSUComponent"
-		)
-	)
-	FComponentReference LinkedClutch{};
-
 	/** 引擎扭矩曲线（归一化） */
 	UPROPERTY(
 		EditDefaultsOnly,

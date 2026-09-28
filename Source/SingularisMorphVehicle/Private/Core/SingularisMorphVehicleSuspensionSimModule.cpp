@@ -132,22 +132,40 @@ void FSingularisMorphVehicleSuspensionSimModule::GetWorldTraceEndpoints(
 	OutTrace.End = WorldLocation + WorldDirection * (Setup().MaxDrop + WheelRadius) + MovementExpansion;
 }
 
-void FSingularisMorphVehicleSuspensionSimModule::ComputeSubstepLayout(
+void FSingularisMorphVehicleSuspensionSimModule::Simulate(
 	float DeltaTime,
-	int32& OutNumSubsteps,
-	float& OutSubDeltaTime
-) const
+	const FAllInputs& Inputs,
+	FSimModuleTree& VehicleModuleSystem
+)
 {
-	const float Mass = FMath::Max(Setup().UnsprungMass, 1.0f);
-	const float PeakStiffness = FMath::Max(TireStiffness, Setup().SpringRate);
-	const float Omega = FMath::Sqrt(FMath::Max(PeakStiffness, 0.0f) / Mass);
+	CurrentTimeDilation = FMath::Max(Inputs.CurrentTimeDilation, SMALL_NUMBER);
 
-	OutNumSubsteps = FMath::Clamp(
-		FMath::CeilToInt32(Omega * DeltaTime / MaxTravelPhaseStep),
-		1,
-		MaxTravelSubsteps
-	);
-	OutSubDeltaTime = DeltaTime / static_cast<float>(OutNumSubsteps);
+	// 1) 行程动力学积分：产出簧上反力与轮胎载荷
+	auto SuspensionForce = 0.0f;
+	auto ForceIntoSurface = 0.0f;
+	IntegrateTravel(FMath::Max(DeltaTime, SMALL_NUMBER), SuspensionForce, ForceIntoSurface);
+
+	// 2) 簧上反力沿悬挂轴作用（弹簧无法下拉车体，负值截断由 IntegrateTravel 完成）
+	if (SuspensionForce > 0.0f)
+		AddLocalForce(Setup().SuspensionAxis * -SuspensionForce, true, false, true, FColor::Green);
+
+	// 3) 把轮胎载荷交给配对车轮，决定可用抓地力
+	if (SimModuleTree && WheelSimTreeIndex != INVALID_IDX)
+	{
+		if (ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(WheelSimTreeIndex))
+		{
+			if (FWheelBaseInterface* Wheel = Module->Cast<FWheelBaseInterface>())
+				Wheel->SetForceIntoSurface(ForceIntoSurface * Setup().SuspensionForceEffect);
+		}
+	}
+}
+
+void FSingularisMorphVehicleSuspensionSimModule::Animate()
+{
+	FVector Movement = -Setup().SuspensionAxis * (Setup().MaxRaise + GetSpringLength());
+
+	AnimationData.AnimFlags = EAnimationFlags::AnimatePosition;
+	AnimationData.AnimationLocOffset = Movement;
 }
 
 void FSingularisMorphVehicleSuspensionSimModule::IntegrateTravel(
@@ -224,40 +242,22 @@ void FSingularisMorphVehicleSuspensionSimModule::IntegrateTravel(
 	OutForceIntoSurface = GroundForce;
 }
 
-void FSingularisMorphVehicleSuspensionSimModule::Simulate(
+void FSingularisMorphVehicleSuspensionSimModule::ComputeSubstepLayout(
 	float DeltaTime,
-	const FAllInputs& Inputs,
-	FSimModuleTree& VehicleModuleSystem
-)
+	int32& OutNumSubsteps,
+	float& OutSubDeltaTime
+) const
 {
-	CurrentTimeDilation = FMath::Max(Inputs.CurrentTimeDilation, SMALL_NUMBER);
+	const float Mass = FMath::Max(Setup().UnsprungMass, 1.0f);
+	const float PeakStiffness = FMath::Max(TireStiffness, Setup().SpringRate);
+	const float Omega = FMath::Sqrt(FMath::Max(PeakStiffness, 0.0f) / Mass);
 
-	// 1) 行程动力学积分：产出簧上反力与轮胎载荷
-	auto SuspensionForce = 0.0f;
-	auto ForceIntoSurface = 0.0f;
-	IntegrateTravel(FMath::Max(DeltaTime, SMALL_NUMBER), SuspensionForce, ForceIntoSurface);
-
-	// 2) 簧上反力沿悬挂轴作用（弹簧无法下拉车体，负值截断由 IntegrateTravel 完成）
-	if (SuspensionForce > 0.0f)
-		AddLocalForce(Setup().SuspensionAxis * -SuspensionForce, true, false, true, FColor::Green);
-
-	// 3) 把轮胎载荷交给配对车轮，决定可用抓地力
-	if (SimModuleTree && WheelSimTreeIndex != INVALID_IDX)
-	{
-		if (ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(WheelSimTreeIndex))
-		{
-			if (FWheelBaseInterface* Wheel = Module->Cast<FWheelBaseInterface>())
-				Wheel->SetForceIntoSurface(ForceIntoSurface * Setup().SuspensionForceEffect);
-		}
-	}
-}
-
-void FSingularisMorphVehicleSuspensionSimModule::Animate()
-{
-	FVector Movement = -Setup().SuspensionAxis * (Setup().MaxRaise + GetSpringLength());
-
-	AnimationData.AnimFlags = EAnimationFlags::AnimatePosition;
-	AnimationData.AnimationLocOffset = Movement;
+	OutNumSubsteps = FMath::Clamp(
+		FMath::CeilToInt32(Omega * DeltaTime / MaxTravelPhaseStep),
+		1,
+		MaxTravelSubsteps
+	);
+	OutSubDeltaTime = DeltaTime / static_cast<float>(OutNumSubsteps);
 }
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)

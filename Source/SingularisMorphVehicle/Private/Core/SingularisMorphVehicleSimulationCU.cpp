@@ -127,59 +127,55 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 			FSingularisMorphVehicleBuilder::FixupTreeLinks(SimModuleTree);
 
 			// 树变更后输出模块结构快照，供物理线程侧问题定位。
-			// 调试串的拼接有堆分配开销，仅在 Verbose 级别实际启用时才执行
-			if (!LogSingularisMorphVehicle.IsSuppressed(ELogVerbosity::Verbose))
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Verbose,
+				TEXT("=== PT Tree after Fixup: %d nodes ==="),
+				SimModuleTree->GetNumNodes()
+			);
+			for (auto N = 0; N < SimModuleTree->GetNumNodes(); N++)
 			{
-				UE_LOG(
-					LogSingularisMorphVehicle,
-					Verbose,
-					TEXT("=== PT Tree after Fixup: %d nodes ==="),
-					SimModuleTree->GetNumNodes()
-				);
-				for (auto N = 0; N < SimModuleTree->GetNumNodes(); N++)
+				Chaos::ISimulationModuleBase* Mod = SimModuleTree->GetNode(N).SimModule;
+				if (Mod)
 				{
-					Chaos::ISimulationModuleBase* Mod = SimModuleTree->GetNode(N).SimModule;
-					if (Mod)
+					const int32 ParentIdx = SimModuleTree->GetNode(N).Parent;
+					const int32 NumChildren = SimModuleTree->GetNode(N).Children.Num();
+					FString DebugStr;
+					Mod->GetDebugString(DebugStr);
+					UE_LOG(
+						LogSingularisMorphVehicle,
+						Verbose,
+						TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
+						N,
+						*DebugStr,
+						ParentIdx,
+						NumChildren,
+						Mod->GetGuid(),
+						Mod->GetTransformIndex()
+					);
+
+					// Log suspension-wheel links
+					if (Mod->IsSimType<Chaos::FSuspensionBaseInterface>())
 					{
-						const int32 ParentIdx = SimModuleTree->GetNode(N).Parent;
-						const int32 NumChildren = SimModuleTree->GetNode(N).Children.Num();
-						FString DebugStr;
-						Mod->GetDebugString(DebugStr);
+						auto* Susp = Mod->Cast<Chaos::FSuspensionBaseInterface>();
 						UE_LOG(
 							LogSingularisMorphVehicle,
 							Verbose,
-							TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
-							N,
-							*DebugStr,
-							ParentIdx,
-							NumChildren,
-							Mod->GetGuid(),
-							Mod->GetTransformIndex()
+							TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
+							Susp->GetWheelSimTreeIndex(),
+							Susp->GetMaxSpringLength()
 						);
-
-						// Log suspension-wheel links
-						if (Mod->IsSimType<Chaos::FSuspensionBaseInterface>())
-						{
-							auto* Susp = Mod->Cast<Chaos::FSuspensionBaseInterface>();
-							UE_LOG(
-								LogSingularisMorphVehicle,
-								Verbose,
-								TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
-								Susp->GetWheelSimTreeIndex(),
-								Susp->GetMaxSpringLength()
-							);
-						}
-						if (Mod->IsSimType<Chaos::FWheelBaseInterface>())
-						{
-							auto* Wheel = Mod->Cast<Chaos::FWheelBaseInterface>();
-							UE_LOG(
-								LogSingularisMorphVehicle,
-								Verbose,
-								TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
-								Wheel->GetSuspensionSimTreeIndex(),
-								Wheel->GetWheelRadius()
-							);
-						}
+					}
+					if (Mod->IsSimType<Chaos::FWheelBaseInterface>())
+					{
+						auto* Wheel = Mod->Cast<Chaos::FWheelBaseInterface>();
+						UE_LOG(
+							LogSingularisMorphVehicle,
+							Verbose,
+							TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
+							Wheel->GetSuspensionSimTreeIndex(),
+							Wheel->GetWheelRadius()
+						);
 					}
 				}
 			}

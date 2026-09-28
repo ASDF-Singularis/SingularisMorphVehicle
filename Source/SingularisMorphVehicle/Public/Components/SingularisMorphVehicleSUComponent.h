@@ -23,51 +23,6 @@ class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSUComponent : public UAc
 public:
 #pragma region Parameter
 
-	/** 是否启用动画驱动 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元",
-		meta = (DisplayName = "启用动画")
-	)
-	bool bAnimationEnabled = false;
-
-	/** 关联的骨骼名称，用于动画驱动 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元",
-		meta = (DisplayName = "骨骼名称", EditCondition = "bAnimationEnabled")
-	)
-	FName BoneName = NAME_None;
-
-	/** 模块输入配置 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元",
-		meta = (DisplayName = "输入配置")
-	)
-	TArray<FModuleInputSetup> InputConfig{};
-
-	/** 动画偏移量 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元",
-		meta = (DisplayName = "动画偏移", EditCondition = "bAnimationEnabled")
-	)
-	FVector AnimationOffset = FVector::ZeroVector;
-
-	/** 叠加在代理组件变换之上的增量偏移；代理组件缺失时叠加在 Actor 根组件变换上 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元",
-		meta = (DisplayName = "变换偏移")
-	)
-	FTransform TransformOffset = FTransform::Identity;
-
 	/** 驱动组件引用 */
 	UPROPERTY(
 		EditAnywhere,
@@ -76,6 +31,51 @@ public:
 		meta = (DisplayName = "驱动组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
 	)
 	FComponentReference DrivenComponent{};
+
+	/** 是否启用动画驱动 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "引力奇点基础仿真单元|动画",
+		meta = (DisplayName = "启用动画")
+	)
+	bool bAnimationEnabled = false;
+
+	/** 关联的骨骼名称，用于动画驱动 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "引力奇点基础仿真单元|动画",
+		meta = (DisplayName = "骨骼名称", EditCondition = "bAnimationEnabled")
+	)
+	FName BoneName = NAME_None;
+
+	/** 模块输入配置 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "引力奇点基础仿真单元|动画",
+		meta = (DisplayName = "输入配置")
+	)
+	TArray<FModuleInputSetup> InputConfig{};
+
+	/** 动画偏移量 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "引力奇点基础仿真单元|动画",
+		meta = (DisplayName = "动画偏移", EditCondition = "bAnimationEnabled")
+	)
+	FVector AnimationOffset = FVector::ZeroVector;
+
+	/** 叠加在代理组件变换之上的增量偏移；代理组件缺失时叠加在 Actor 根组件变换上 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "引力奇点基础仿真单元|动画",
+		meta = (DisplayName = "变换偏移")
+	)
+	FTransform TransformOffset = FTransform::Identity;
 
 #pragma endregion
 

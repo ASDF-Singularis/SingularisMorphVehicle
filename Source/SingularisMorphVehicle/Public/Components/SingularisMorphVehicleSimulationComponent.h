@@ -35,8 +35,6 @@ class IPhysicsProxyBase;
 class AHUD;
 class UCanvas;
 class USingularisMorphVehicleSUComponent;
-class USingularisSuspensionSUComponent;
-class USingularisWheelSUComponent;
 
 #pragma region 委托签名
 
@@ -444,10 +442,14 @@ public:
 	void FinalizeModuleUpdates();
 
 	/**
-	 * 基于快照全量重建物理模拟树。
+	 * 基于快照全量重建物理模拟树（单动力链隐式关联）。
 	 *
-	 * 清空现有模拟树缓存，按确定性模块类型层级重建整棵模拟树；
-	 * 模块来源为快照实体上映射的 SU 组件加 Owner 上其余 SU 组件（纯仿真模块）。
+	 * 统一收集快照实体与 Owner 上的全部 SU 组件后按类型自动关联：
+	 * 底盘/引擎/离合/变速箱/轮轴各取首个实例（多余实例忽略并告警），
+	 * 无引擎时原动机槽由首个电机顶替；车轮统一挂到动力链最末端
+	 * （轮轴→变速箱→离合→原动机→底盘，缺项时取最近的现存上游）；
+	 * 悬挂挂到与其共用驱动组件的车轮之下；其余模块挂到底盘之下。
+	 * 模块集合与粒子布局未变化时跳过重建（幂等）。
 	 * 处理完毕后调用 FinalizeModuleUpdates 批量提交到物理线程。
 	 * 空快照且当前无模块时无操作；空快照且存在模块（载具解体）时清除全部模块。
 	 */

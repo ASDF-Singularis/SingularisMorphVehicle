@@ -148,32 +148,6 @@ class SINGULARISMORPHVEHICLE_API USingularisWheelSUComponent : public USingulari
 public:
 #pragma region Parameter
 
-	/** 链接的悬挂组件（单向引用） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元",
-		meta = (
-			DisplayName = "链接悬挂",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisSuspensionSUComponent"
-		)
-	)
-	FComponentReference LinkedSuspension{};
-
-	/** 链接的轮轴组件（单向引用，声明后车轮的扭矩父节点为该轮轴） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元",
-		meta = (
-			DisplayName = "链接轮轴",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisAxleSUComponent"
-		)
-	)
-	FComponentReference LinkedAxle{};
-
 	/** 车轮半径（厘米） */
 	UPROPERTY(
 		EditDefaultsOnly,

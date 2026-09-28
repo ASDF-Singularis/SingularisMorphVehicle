@@ -8,9 +8,9 @@
 /**
  * 引力奇点轮轴仿真单元组件
  *
- * 带惯性的扭矩传递节点，可在变速箱与车轮之间插入以构成差速器节点，
- * 扭矩沿模拟树的父子方向向下游传递。树内位置由 SimulationComponent 的
- * RebuildFromSnapshot 按 LinkedTransmission 引用决定，无引用时挂到 Chassis 之下。
+ * 带惯性的扭矩传递节点，插入变速箱与车轮之间构成差速器节点，
+ * 扭矩沿模拟树的父子方向向下游传递。单动力链约定下由 SimulationComponent
+ * 的 RebuildFromSnapshot 自动挂到首个变速箱之下，无需配置引用。
  */
 UCLASS(
 	Blueprintable,
@@ -24,19 +24,6 @@ class SINGULARISMORPHVEHICLE_API USingularisAxleSUComponent : public USingularis
 
 public:
 #pragma region Parameter
-
-	/** 链接的变速箱组件（单向引用，声明后轮轴的扭矩父节点为该变速箱） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点轮轴仿真单元",
-		meta = (
-			DisplayName = "链接变速箱",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisTransmissionSUComponent"
-		)
-	)
-	FComponentReference LinkedTransmission{};
 
 	/** 轮轴惯性（kg·m²） */
 	UPROPERTY(

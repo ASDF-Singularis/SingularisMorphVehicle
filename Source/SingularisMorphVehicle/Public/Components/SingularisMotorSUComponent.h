@@ -10,7 +10,9 @@
  *
  * 以转速平方曲线输出扭矩的电驱动力单元，扭矩幅值由油门输入控制，
  * 转速接近零与最大转速时输出衰减、中段转速达到峰值。
- * 与引擎同为原动机，扭矩沿模拟树的父子方向向下传递，通过链接离合器接入动力链。
+ * 与引擎同为原动机，扭矩沿模拟树的父子方向向下传递；单动力链约定下
+ * 由 SimulationComponent 的 RebuildFromSnapshot 自动接入动力链：
+ * 无引擎时首个电机顶替原动机槽，其余电机挂到底盘之下。
  * 输入端配置继承自基类，由上层按需声明油门等控制通道。
  */
 UCLASS(
@@ -25,19 +27,6 @@ class SINGULARISMORPHVEHICLE_API USingularisMotorSUComponent : public USingulari
 
 public:
 #pragma region Parameter
-
-	/** 链接的离合器组件（单向引用，声明后电机的扭矩下游为该离合器） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元",
-		meta = (
-			DisplayName = "链接离合器",
-			UseComponentPicker,
-			AllowedClasses = "/Script/SingularisMorphVehicle.SingularisClutchSUComponent"
-		)
-	)
-	FComponentReference LinkedClutch{};
 
 	/** 峰值扭矩（牛顿·米） */
 	UPROPERTY(
