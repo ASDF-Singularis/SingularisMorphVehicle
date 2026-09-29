@@ -156,7 +156,7 @@ public:
 	)
 	float MatchRadius = 50.0f;
 
-	/** 轴向类型：挂载轮胎的滚动轴（注入车轮模块，覆盖轮胎自身配置） */
+	/** 轴向类型：挂载轮胎的滚动轴（建树期注入车轮模块） */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
@@ -165,7 +165,7 @@ public:
 	)
 	ESingularisMorphVehicleWheelAxisType AxisType = ESingularisMorphVehicleWheelAxisType::X;
 
-	/** 反转方向：车辆两侧轮胎的镜像差异由槽位声明（注入车轮模块，覆盖轮胎自身配置） */
+	/** 反转方向：车辆两侧轮胎的镜像差异由槽位声明（建树期注入车轮模块） */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,

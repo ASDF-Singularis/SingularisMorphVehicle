@@ -37,8 +37,9 @@ void USingularisWheelSUComponent::OnOutputReady(const Chaos::FSimOutputData* Out
 
 Chaos::ISimulationModuleBase* USingularisWheelSUComponent::CreateNewCoreModule() const
 {
-	// 1) 轮胎设置：转向配置由立轴槽位在建树期注入（ApplySlotConfig），
-	//    此处构建无转向基准；轴向/反转为本组件的回退值（自由轮胎语义）
+	// 1) 轮胎设置：转向/轴向/反转均为轮位（立轴）配置，由槽位在建树期注入
+	//    （ApplySlotConfig）；此处仅构建自由轮语义的中性基准：
+	//    无转向、轴向 X、不反转，未挂槽位的轮胎按该默认结算地面交互
 	Chaos::FWheelSettings Settings;
 
 	Settings.Radius = WheelRadius;
@@ -61,8 +62,8 @@ Chaos::ISimulationModuleBase* USingularisWheelSUComponent::CreateNewCoreModule()
 	Settings.MaxSteeringAngle = 0.0f;
 	Settings.ABSEnabled = bABSEnabled;
 	Settings.TractionControlEnabled = bTractionControlEnabled;
-	Settings.Axis = AxisType == ESingularisMorphVehicleWheelAxisType::Y ? Chaos::EWheelAxis::Y : Chaos::EWheelAxis::X;
-	Settings.ReverseDirection = ReverseDirection;
+	Settings.Axis = Chaos::EWheelAxis::X;
+	Settings.ReverseDirection = false;
 	Settings.ForceOffset = ForceOffset;
 
 	// 2) 转向动力学设置：默认关闭，挂载立轴槽位时由注入整体替换

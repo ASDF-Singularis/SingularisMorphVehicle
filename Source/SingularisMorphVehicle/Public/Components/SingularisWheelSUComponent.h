@@ -21,9 +21,10 @@ class USingularisUprightSUComponent;
  * 模拟车轮的转动、摩擦与制动行为，支持 ABS、牵引力控制、手刹等高级特性。
  * 通过物理线程与悬挂模块协同工作，输出数据通过 OnWheelTouchChange 事件回调至游戏线程。
  *
- * 转向、轴向与反转方向是轮位属性而非轮胎属性：挂载立轴槽位时由立轴配置
- * 在建树期注入（见 ApplySlotConfig）；未挂载的自由轮胎使用本组件的轴向与
- * 反转方向作为回退值，且始终无转向。
+ * 转向、轴向与反转方向是轮位属性而非轮胎属性：三项配置全部由立轴槽位持有，
+ * 挂载槽位时在建树期注入车轮模块（见 ApplySlotConfig）。本组件不持有这三项配置：
+ * 未挂载的轮胎以中性默认（无转向、轴向 X、不反转）作为简单滚动体，
+ * 其地面交互按该默认结算。
  */
 UCLASS(
 	Blueprintable,
@@ -55,15 +56,6 @@ public:
 		meta = (DisplayName = "车轮宽度")
 	)
 	float WheelWidth = 20.0f;
-
-	/** 轴向类型（自由轮胎回退值：挂载立轴槽位时由槽位配置覆盖） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|几何",
-		meta = (DisplayName = "轴向类型")
-	)
-	ESingularisMorphVehicleWheelAxisType AxisType = ESingularisMorphVehicleWheelAxisType::X;
 
 	/** 车轮转动惯性 */
 	UPROPERTY(
@@ -208,15 +200,6 @@ public:
 		meta = (DisplayName = "力偏移")
 	)
 	FVector ForceOffset = FVector::ZeroVector;
-
-	/** 反转旋转方向（自由轮胎回退值：挂载立轴槽位时由槽位配置覆盖） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|偏移",
-		meta = (DisplayName = "反转方向")
-	)
-	bool ReverseDirection = false;
 
 #pragma endregion
 
