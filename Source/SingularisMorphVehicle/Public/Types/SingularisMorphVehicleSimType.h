@@ -10,7 +10,7 @@
 
 /**
  * 引力奇点变型载具组件数据。
- * 将场景组件映射至模拟 GUID 与可选的动画视觉组件。
+ * 将场景组件映射至模拟 GUID、父模块 GUID 与可选的动画视觉组件。
  */
 USTRUCT()
 struct FSingularisMorphVehicleComponentData
@@ -23,6 +23,14 @@ struct FSingularisMorphVehicleComponentData
 	/** 动画驱动的代理组件缓存（可能与模拟组件不同） */
 	UPROPERTY()
 	TObjectPtr<USceneComponent> ProxyComponentToAnimate = nullptr;
+
+	/**
+	 * 建立时该模块的父模块 GUID（根节点为 INDEX_NONE）。
+	 *
+	 * 差量重建以「计划父模块 GUID == 记录父模块 GUID」判定父节点稳定性：
+	 * 父模块被移除或替换时子模块级联替换，不依赖树删除时的隐式重挂。
+	 */
+	int32 ParentGuid = INDEX_NONE;
 };
 
 /**

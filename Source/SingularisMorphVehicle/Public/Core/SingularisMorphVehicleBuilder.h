@@ -11,7 +11,7 @@ class USingularisMorphVehicleSimulationComponent;
  *
  * 提供静态工具方法修复模拟树内的链接关系。
  */
-class FSingularisMorphVehicle_API FSingularisMorphVehicleBuilder
+class SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleBuilder
 {
 public:
 	/** 修复模拟树内的悬挂↔车轮交叉链接（按父子邻接关系建立双向索引） */
