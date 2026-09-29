@@ -27,8 +27,8 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterContext
 /**
  * 引力奇点变型载具物理适配器快照实体。
  *
- * 描述集群中单个物理组件及其粒子数据，是重建物理模拟树的数据单元。
- * 适配器在集群变更后重建完整快照，
+ * 描述物理装配中单个部件组件及其粒子数据，是重建物理模拟树的数据单元。
+ * 适配器在物理装配变更后重建完整快照，
  * 由 SimulationComponent 在 PreTickGT 中通过 ConsumeSnapshot 拉取并全量重建模拟树。
  *
  * 实体只描述物理侧信息（组件 + 粒子）；SU 组件的查询与模块化参数
@@ -41,7 +41,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshotE
 	GENERATED_BODY()
 
 	/**
-	 * 集群中该粒子的物理组件。
+	 * 该物理粒子对应的部件组件。
 	 * 由适配器通过粒子代理反查得到，作为唯一标识与变换/粒子数据的载体。
 	 * SU 组件的查询由消费端通过 MappingSubsystem 完成。
 	 */
@@ -49,16 +49,16 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshotE
 	TObjectPtr<UPrimitiveComponent> PrimitiveComponent = nullptr;
 
 	/**
-	 * 集群子粒子的真实唯一索引（FUniqueIdx::Idx）。
+	 * 物理粒子的真实唯一索引（FUniqueIdx::Idx）。
 	 * 用于模块粒子匹配（GetClusterParticle），
-	 * 而非 ChildParticles 数组下标——两者通常不同。
+	 * 而非适配器内部数组的下标——两者通常不同。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 ParticleIndex = INDEX_NONE;
 
 	/**
 	 * 相对于父粒子的局部变换。
-	 * 源自 ClusterUnionChildData::ChildToParent，用于初始化模块空间姿态。
+	 * 由适配器从物理后端取得的部件粒子相对装配父粒子的位姿，用于初始化模块空间姿态。
 	 *
 	 * 注意：引擎会把模块的动画位移写回该字段，因此它携带的是
 	 * 「静止基准 + 当帧动画位移」的合成值。消费端仅可在部件首次注册时
@@ -82,7 +82,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshot
 	GENERATED_BODY()
 
 	/**
-	 * 当前集群中所有有效模块实体的完整列表。
+	 * 当前物理装配中所有有效模块实体的完整列表。
 	 * 消费端按遍历顺序全量重建模拟树。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <CoreMinimal.h>
-#include <Curves/CurveFloat.h>
 
 #include "SingularisMorphVehicleSUComponent.h"
 #include "SingularisWheelSUComponent.generated.h"
@@ -14,126 +13,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWheelTouchChange, int32, Guid, b
 
 #pragma endregion
 
-/**
- * 引力奇点车轮转向设置。
- *
- * 转向角是模拟中的积分状态量：目标角由控制输入、最大转角与车速敏感曲线决定，
- * 实际角以有限的上升/回落角速度逐步逼近，逼近过程与轮胎回正力矩共同构成
- * 转向的动力学过程（ChaosVehicles 的原始实现为输入直接乘最大转角的瞬时转向）。
- *
- * 参考角指外侧轮的目标角，由 MaxSteeringAngle 限幅；几何修正只放大内侧轮。
- */
-USTRUCT(BlueprintType)
-struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
-{
-	GENERATED_BODY()
-
-	/** 转向几何类型（仅决定内侧轮的目标角分配方式） */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "转向几何类型")
-	)
-	ESingularisMorphVehicleSteeringType SteeringType = ESingularisMorphVehicleSteeringType::SingleAngle;
-
-	/** 转向角上升速率（度/秒），越低转向越缓慢 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "转向上升速率", ClampMin = "0.0", UIMin = "0.0")
-	)
-	float SteeringRiseRate = 120.0f;
-
-	/** 转向角回落速率（度/秒），通常大于上升速率以便更快回正 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "转向回落速率", ClampMin = "0.0", UIMin = "0.0")
-	)
-	float SteeringFallRate = 240.0f;
-
-	/** 角度比例（角度比例几何用）：内侧轮 = 参考角 / 比例，取值 (0, 1] */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (
-			DisplayName = "角度比例",
-			ClampMin = "0.01",
-			ClampMax = "1.0",
-			UIMin = "0.01",
-			UIMax = "1.0",
-			EditCondition = "SteeringType == ESingularisMorphVehicleSteeringType::AngleRatio"
-		)
-	)
-	float AngleRatio = 0.7f;
-
-	/** 轴距（厘米，阿克曼几何用） */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (
-			DisplayName = "轴距",
-			ClampMin = "0.0",
-			UIMin = "0.0",
-			EditCondition = "SteeringType == ESingularisMorphVehicleSteeringType::Ackermann"
-		)
-	)
-	float WheelBase = 280.0f;
-
-	/** 轮距（厘米，阿克曼几何用） */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (
-			DisplayName = "轮距",
-			ClampMin = "0.0",
-			UIMin = "0.0",
-			EditCondition = "SteeringType == ESingularisMorphVehicleSteeringType::Ackermann"
-		)
-	)
-	float TrackWidth = 160.0f;
-
-	/**
-	 * 轮胎回正效应增益（度/(牛顿·秒)），0 表示关闭。
-	 *
-	 * 开启后以轮胎侧向力大小为比例持续削减转向角幅值，使稳态转角小于目标角
-	 * （需驾驶员持续输入以保持转角），并在附着突变时产生转向反馈。
-	 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "回正效应增益", ClampMin = "0.0", UIMin = "0.0")
-	)
-	float SelfAligningTorqueGain = 0.0f;
-
-	/**
-	 * 车速敏感转向曲线：X 为轮心相对地面的前进速度（km/h），Y 为转向倍率。
-	 *
-	 * 曲线按峰值归一化后等距采样进模拟，为空表示转向角不随速度衰减。
-	 * 默认值取自经典载具插件的速度敏感曲线（0/32/97/193 km/h → 1.0/0.8/0.4/0.3）。
-	 */
-	UPROPERTY(
-		EditAnywhere,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "车速敏感转向曲线")
-	)
-	FRuntimeFloatCurve SpeedSteeringCurve{};
-};
+class USingularisUprightSUComponent;
 
 /**
- * 引力奇点车轮仿单元组件
+ * 引力奇点车轮仿真单元组件
  *
- * 模拟车轮的转动、摩擦、转向与制动行为。支持 ABS、牵引力控制、
- * 手刹等高级特性。通过物理线程与悬挂模块协同工作，
- * 输出数据通过 OnWheelTouchChange 事件回调至游戏线程。
+ * 模拟车轮的转动、摩擦与制动行为，支持 ABS、牵引力控制、手刹等高级特性。
+ * 通过物理线程与悬挂模块协同工作，输出数据通过 OnWheelTouchChange 事件回调至游戏线程。
+ *
+ * 转向、轴向与反转方向是轮位属性而非轮胎属性：挂载立轴槽位时由立轴配置
+ * 在建树期注入（见 ApplySlotConfig）；未挂载的自由轮胎使用本组件的轴向与
+ * 反转方向作为回退值，且始终无转向。
  */
 UCLASS(
 	Blueprintable,
@@ -166,7 +56,7 @@ public:
 	)
 	float WheelWidth = 20.0f;
 
-	/** 轴向类型 */
+	/** 轴向类型（自由轮胎回退值：挂载立轴槽位时由槽位配置覆盖） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -310,38 +200,6 @@ public:
 	)
 	float AutoHandbrakeVelocityThreshold = 10.0f;
 
-	/** 是否启用转向 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "启用转向")
-	)
-	bool bSteeringEnabled = false;
-
-	/** 最大转向角度 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "最大转向角度", EditCondition = "bSteeringEnabled", ClampMin = "0.0", UIMin = "0.0")
-	)
-	float MaxSteeringAngle = 35.0f;
-
-	/**
-	 * 转向动力学设置（仅启用转向时生效）。
-	 *
-	 * 转向角是被积分的状态量：目标角由输入、最大转角与车速敏感曲线确定，
-	 * 实际角按上升/回落速率限幅逼近目标角，由此获得经典载具插件的转向手感。
-	 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|转向",
-		meta = (DisplayName = "转向设置", EditCondition = "bSteeringEnabled")
-	)
-	FSingularisMorphVehicleSteeringSetup SteeringSetup{};
-
 	/** 力作用点偏移 */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -351,7 +209,7 @@ public:
 	)
 	FVector ForceOffset = FVector::ZeroVector;
 
-	/** 反转旋转方向 */
+	/** 反转旋转方向（自由轮胎回退值：挂载立轴槽位时由槽位配置覆盖） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -410,6 +268,12 @@ public:
 	virtual void OnOutputReady(const Chaos::FSimOutputData* OutputData) override;
 
 	virtual Chaos::ISimulationModuleBase* CreateNewCoreModule() const override;
+
+	/** 建树期立轴槽位配置注入：转向/轴向/反转写入本组件创建的车轮模块（见 ApplyUprightSlotConfig） */
+	virtual void ApplySlotConfig(
+		Chaos::ISimulationModuleBase* CoreModule,
+		const USingularisUprightSUComponent* UprightSU
+	) override;
 
 #pragma endregion
 };

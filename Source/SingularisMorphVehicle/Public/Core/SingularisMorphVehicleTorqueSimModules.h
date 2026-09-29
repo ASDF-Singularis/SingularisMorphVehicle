@@ -14,9 +14,9 @@
  * 空网络数据（FSimModuleTree::GenerateReplicationStructure 声明 "nullptr is a valid response"），
  * 即这两个模块不参与网络状态复制。
  *
- * 不引入新的模拟类型名：GetSimType() 与 IsSimType<FAxleSimModule>() 仍与上游一致，故 FSingularisMorphVehicleBuilder
- * 中的轮轴识别（FixupTreeLinks）、FTorqueSimModule::TransmitTorque 中按 GetSimType() 相等跳过同类子
- * 节点的判定与模块工厂注册均不受影响。
+ * 不引入新的模拟类型名：GetSimType() 与 IsSimType<FAxleSimModule>() 仍与上游一致，故
+ * FTorqueSimModule::TransmitTorque 中按 GetSimType() 相等跳过同类子节点的判定与模块
+ * 工厂注册均不受影响。
  */
 
 /** 引力奇点变型轮轴模拟模块。 */

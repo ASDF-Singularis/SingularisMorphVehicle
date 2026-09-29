@@ -15,4 +15,5 @@
 #include "Components/SingularisSuspensionSUComponent.h"
 #include "Components/SingularisThrusterSUComponent.h"
 #include "Components/SingularisTransmissionSUComponent.h"
+#include "Components/SingularisUprightSUComponent.h"
 #include "Components/SingularisWheelSUComponent.h"

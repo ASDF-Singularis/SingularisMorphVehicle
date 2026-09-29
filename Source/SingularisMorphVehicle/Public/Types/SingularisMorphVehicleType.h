@@ -25,7 +25,8 @@ enum class ESingularisMorphVehicleModuleType : uint8
 	Rudder UMETA(DisplayName = "方向舵"),
 	Elevator UMETA(DisplayName = "升降舵"),
 	Propeller UMETA(DisplayName = "螺旋桨"),
-	Balloon UMETA(DisplayName = "气球")
+	Balloon UMETA(DisplayName = "气球"),
+	Upright UMETA(DisplayName = "立轴")
 };
 
 /**

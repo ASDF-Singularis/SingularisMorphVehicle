@@ -60,6 +60,24 @@ void FSingularisMorphWheelSimModule::Simulate(
 	LastLateralForce = Setup().Axis == Chaos::EWheelAxis::X ? FrictionForce.Y : FrictionForce.X;
 }
 
+void FSingularisMorphWheelSimModule::ApplyUprightSlotConfig(
+	const FSingularisMorphWheelSteeringSettings& InSteeringSettings,
+	const Chaos::EWheelAxis InAxis,
+	const bool bInReverseDirection
+)
+{
+	SteeringSettings = InSteeringSettings;
+	CurrentSteeringAngleDegrees = InSteeringSettings.InitialSteeringAngle;
+
+	// 核心设置与转向设置保持一致：核心路径按「输入 × 最大转角」求转向角，
+	// 转向动力学按归一化值写回输入，两者共用同一最大转角才能严格互逆
+	Chaos::FWheelSettings& Settings = AccessSetup();
+	Settings.Axis = InAxis;
+	Settings.ReverseDirection = bInReverseDirection;
+	Settings.SteeringEnabled = InSteeringSettings.bEnabled;
+	Settings.MaxSteeringAngle = InSteeringSettings.MaxSteeringAngle;
+}
+
 float FSingularisMorphWheelSimModule::ComputeTargetSteeringAngle(const Chaos::FAllInputs& Inputs) const
 {
 	const float InNormSteering = FMath::Clamp(
@@ -169,7 +187,7 @@ float FSingularisMorphWheelSimModule::GetLateralSideSign() const
 {
 	// 以模块的组件变换（相对车辆参考变换）的横向分量取符号：
 	// 该变换在模块构造时写入且不随后续运动变化，恒为「轮位相对车辆中线」的横向偏移；
-	// 而 GetParentRelativeTransform 是相对父粒子（簇质心）的位姿，质心横向偏移时两侧会判为同一侧
+	// 而 GetParentRelativeTransform 是相对父粒子（聚合质心）的位姿，质心横向偏移时两侧会判为同一侧
 	const auto LateralPosition = static_cast<float>(GetComponentTransform().GetLocation().Y);
 	return FMath::Abs(LateralPosition) > KINDA_SMALL_NUMBER ? FMath::Sign(LateralPosition) : 0.0f;
 }

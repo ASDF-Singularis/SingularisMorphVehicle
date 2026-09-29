@@ -86,6 +86,19 @@ public:
 	/** 当前实际转向角（度） */
 	float GetCurrentSteeringAngleDegrees() const { return CurrentSteeringAngleDegrees; }
 
+	/**
+	 * 应用立轴槽位配置（建树期注入，模块入树前调用）。
+	 *
+	 * 轴向与反转方向由核心物理路径（速度轴交换、摩擦力轴映射、动画旋转轴）
+	 * 从模块设置读取，无法按帧从父模块查询，必须在此一次性写入设置本体；
+	 * 转向设置整体替换（含转向角初值，供槽位换胎后延续转向状态）。
+	 */
+	void ApplyUprightSlotConfig(
+		const FSingularisMorphWheelSteeringSettings& InSteeringSettings,
+		const Chaos::EWheelAxis InAxis,
+		const bool bInReverseDirection
+	);
+
 private:
 	/** 计算本帧的目标转向角（含车速衰减与内外轮几何修正） */
 	float ComputeTargetSteeringAngle(const Chaos::FAllInputs& Inputs) const;

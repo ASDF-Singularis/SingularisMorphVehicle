@@ -11,8 +11,8 @@ class UPrimitiveComponent;
 /**
  * 引力奇点变型载具子系统。
  *
- * 作为 UWorldSubsystem 中介注册表，维护从集群物理组件到
- * 仿真模块单元组件的弱引用映射，供物理适配器 Delta 消费时
+ * 作为 UWorldSubsystem 中介注册表，维护从物理组件到
+ * 仿真模块单元组件的弱引用映射，供 SimulationComponent 重建装配时
  * O(1) 反向查找。组件在 BeginPlay/EndPlay 中自行注册/注销。
  */
 UCLASS(NotBlueprintable, BlueprintType)
@@ -79,7 +79,7 @@ public:
 	/**
 	 * 通过物理组件查找第一个有效的 SU 组件。
 	 *
-	 * 兼容单映射场景（如集群几何体各部件只挂一个 SU），
+	 * 兼容单映射场景（如每个物理部件只挂一个 SU），
 	 * 未找到或弱引用已过期时返回 nullptr。
 	 */
 	UFUNCTION(

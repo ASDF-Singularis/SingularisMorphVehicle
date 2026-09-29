@@ -20,6 +20,7 @@
 #include "SingularisMorphVehicle.h"
 #include "Components/SingularisMorphVehicleSUComponent.h"
 #include "Components/SingularisTransmissionSUComponent.h"
+#include "Components/SingularisUprightSUComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
@@ -163,7 +164,7 @@ void USingularisMorphVehicleSimulationComponent::OnCreatePhysicsState()
 		&USingularisMorphVehicleSimulationComponent::OnSimulationModuleRemovedCallback
 	);
 
-	// 6) 若需禁止休眠则设置集群粒子为永不睡眠
+	// 6) 若需禁止休眠则设置装配根粒子为永不睡眠
 	IPhysicsProxyBase* Proxy = GetPhysicsProxy();
 	if (bKeepVehicleAwake && Proxy && Proxy->GetType() == EPhysicsProxyType::ClusterUnionProxy)
 	{
@@ -398,13 +399,13 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner)) return;
 
-	// 2) 空快照：无集群实体可建。此前已构建过模块（载具完全解体）时清除全部模拟模块，
-	//    否则无操作，保证幂等（集群尚未组装完成时反复调用不产生副作用）。
+	// 2) 空快照：无物理实体可建。此前已构建过模块（载具完全解体）时清除全部模拟模块，
+	//    否则无操作，保证幂等（物理装配尚未就绪时反复调用不产生副作用）。
 	if (Snapshot.Entities.IsEmpty())
 	{
 		if (GuidToCoreModule.IsEmpty()) return;
 
-		// 解体前先固化模块积分状态，使重组（部件回簇）后车轮转角等积分量得以延续
+		// 解体前先固化模块积分状态，使部件重新装配后车轮转角等积分量得以延续
 		CaptureModuleSimStates();
 		ClearAllSimulationModules();
 		return;
@@ -419,16 +420,16 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	{
 		if (!Entity.PrimitiveComponent) continue;
 
-		// 集群联合适配器以物理组件为装配单位，一个组件贡献多个子粒子时无法把它们分别绑定到模块：
-		// 骨骼网格体载具需要专用的骨骼网格体适配器（骨骼↔模块的配置由适配器自身携带），
-		// 本路径不支持该用法，命中即告警
+		// 模块按物理组件映射（一组件一模块），一个组件贡献多个粒子时无法把它们分别绑定到模块：
+		// 多粒子物理来源需要专用适配器在自身侧拆分（如骨骼网格体适配器，骨骼↔模块的对应
+		// 关系由适配器自身携带），本路径不支持该用法，命中即告警
 		if (EntityMap.Contains(Entity.PrimitiveComponent))
 		{
 			UE_LOG(
 				LogSingularisMorphVehicle,
 				Warning,
 				TEXT(
-					"[RebuildFromSnapshot] Component %s contributes multiple cluster particles - the cluster union adapter cannot bind them to module components separately; skeletal mesh vehicles require a dedicated skeletal mesh adapter"
+					"[RebuildFromSnapshot] Component %s contributes multiple physics particles - they cannot be bound to separate module components (one module maps to one component); multi-particle sources require a dedicated adapter that splits them"
 				),
 				*GetNameSafe(Entity.PrimitiveComponent)
 			);
@@ -438,8 +439,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 4) 统一收集本次参与重建的 SU 组件：
-	//    a) 快照实体上通过映射子系统注册的 SU（集群子件）；
-	//    b) Owner 上未出现在快照中的 SU（纯仿真模块，如未入簇的引擎/变速箱）。
+	//    a) 快照实体上通过映射子系统注册的 SU（物理部件）；
+	//    b) Owner 上未出现在快照中的 SU（纯仿真模块，如未参与物理装配的引擎/变速箱）。
 	//    单一来源保证各 Pass 的遍历与类型分派一致，避免遗漏动力链模块。
 	TArray<USingularisMorphVehicleSUComponent*> AllSUComponents;
 	for (const auto& Entity : Snapshot.Entities)
@@ -463,9 +464,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 5) 单动力链分拣：底盘/引擎/离合/变速箱/轮轴各取首个实例，多余实例不入树。
-	//    有效底盘 = 无驱动组件（纯仿真模块）或驱动组件仍在本次快照中（未离簇）：
-	//    仅以组件是否存在为判据，已离簇的底盘件仍会被当作有效底盘，
-	//    使整棵树以无效粒子索引重建（力继续施加到集群根）。
+	//    有效底盘 = 无驱动组件（纯仿真模块）或驱动组件仍在本次快照中（仍在装配中）：
+	//    仅以组件是否存在为判据，已离开装配的底盘件仍会被当作有效底盘，
+	//    使整棵树以无效粒子索引重建（力继续施加到装配根粒子）。
 	//    原动机槽由首个引擎占据，无引擎时由首个电机顶替（引擎与电机同为扭矩源）。
 	USingularisMorphVehicleSUComponent* ChassisSU = nullptr;
 	USingularisMorphVehicleSUComponent* PrimeMoverSU = nullptr;
@@ -476,6 +477,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	TArray<USingularisMorphVehicleSUComponent*> Wheels;
 	TArray<USingularisMorphVehicleSUComponent*> Suspensions;
 	TArray<USingularisMorphVehicleSUComponent*> AuxiliaryModules;
+	TArray<USingularisMorphVehicleSUComponent*> Uprights;
 
 	auto NumChassis = 0;
 	auto NumEngine = 0;
@@ -542,13 +544,18 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			Suspensions.Add(SUComp);
 			break;
 
+		case ESingularisMorphVehicleModuleType::Upright:
+			// 立轴为纯配置载体，不创建模块不入树，仅在槽位匹配阶段参与
+			Uprights.Add(SUComp);
+			break;
+
 		default:
 			AuxiliaryModules.Add(SUComp);
 			break;
 		}
 	}
 
-	// 6) 底盘守卫：无有效底盘（车身件脱离集群 = 载具解体）时清除全部模拟模块
+	// 6) 底盘守卫：无有效底盘（车身件脱离物理装配 = 载具解体）时清除全部模拟模块
 	if (!ChassisSU)
 	{
 		UE_LOG(
@@ -584,7 +591,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 8) 建树计划集合（单槽位实例 + 不限数量模块）。
-	//    动力链父子关系由该集合确定性推导（模块类型 + 驱动组件），
+	//    动力链父子关系由该集合确定性推导（模块类型 + 驱动组件 + 槽位邻近匹配），
 	//    集合一致即整棵树一致，故幂等判据只需校验集合本身
 	TArray<USingularisMorphVehicleSUComponent*> PlannedSUs;
 	PlannedSUs.Reserve(
@@ -601,7 +608,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	PlannedSUs.Append(AuxiliaryModules);
 
 	// 9) 幂等守卫：模块布局与新快照一致时跳过重建。
-	//    适配器可能重复上报同一批子件（例如引擎在物理重同步时重发集群事件），
+	//    适配器可能重复上报同一批部件（例如物理重同步时重发变更事件），
 	//    冗余的变更信号若每次都触发全量重建，会逐帧销毁并重建模块、反复重基准
 	//    静止位姿，表现为载具抖动与持续漂移。
 	//    判据：计划 SU 数量、每个 SU 的驱动组件、其物理粒子索引、模块存在性与动画开关均一致。
@@ -646,7 +653,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	if (bTopologyUnchanged) return;
 
 	// 10) 裁剪静止基准缓存：仅保留本次快照仍存活的（驱动组件, 粒子）键。
-	//     部件离簇后其粒子不再存在，条目随之失效；部件重新入簇时粒子已重建，
+	//     部件离开物理装配后其粒子不再存在，条目随之失效；部件重新加入装配时粒子已重建，
 	//     键不匹配而触发重新捕获，不会沿用陈旧基准
 	{
 		TSet<FSingularisMorphModuleRestPoseKey> LiveKeys;
@@ -707,9 +714,106 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	if (RootPhysicsObject == nullptr)
 		CacheRootPhysicsObject(GetPhysicsProxy());
 
-	// 16) 注册 Lambda：将单个 SU 注册到模拟树。
+	// 16) 轮位槽邻近匹配：轮胎 ↔ 立轴一对一配对。
+	//     立轴的驱动组件为车架上的槽位标记场景组件，其世界位置即槽位位置；
+	//     轮胎驱动组件落在某槽位匹配半径内即挂载该槽位（多候选取最近者，
+	//     每个槽位至多消费一个轮胎）。匹配结果决定车轮的树内位置与槽位配置注入；
+	//     未匹配的轮胎为自由轮：挂底盘之下，无驱动、无转向，仅提供滚动。
+	//     相对几何随车体整体运动保持不变，匹配仅在拓扑变更时重算即可保持稳定
+	TMap<USingularisMorphVehicleSUComponent*, USingularisUprightSUComponent*> WheelToUpright;
+	{
+		struct FUprightSlot
+		{
+			USingularisUprightSUComponent* UprightSU = nullptr;
+			FVector SlotLocation = FVector::ZeroVector;
+		};
+		TArray<FUprightSlot> Slots;
+		Slots.Reserve(Uprights.Num());
+
+		for (USingularisMorphVehicleSUComponent* SUComp : Uprights)
+		{
+			auto* UprightSU = Cast<USingularisUprightSUComponent>(SUComp);
+			const USceneComponent* SlotMarker = UprightSU
+				                                    ? Cast<USceneComponent>(
+					                                    UprightSU->DrivenComponent.GetComponent(UprightSU->GetOwner())
+				                                    )
+				                                    : nullptr;
+			if (!UprightSU || !SlotMarker)
+			{
+				UE_LOG(
+					LogSingularisMorphVehicle,
+					Warning,
+					TEXT(
+						"[RebuildFromSnapshot] Upright %s has no slot marker (set its DrivenComponent to a scene component on the frame) - it cannot match any wheel"
+					),
+					*GetNameSafe(SUComp)
+				);
+				continue;
+			}
+
+			Slots.Add({UprightSU, SlotMarker->GetComponentTransform().GetLocation()});
+		}
+
+		TSet<USingularisMorphVehicleSUComponent*> ConsumedUprights;
+		for (USingularisMorphVehicleSUComponent* SUComp : Wheels)
+		{
+			// 无驱动组件的纯仿真车轮无法定位，保持自由轮
+			const UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
+				SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
+			);
+			if (!ProxyComp) continue;
+
+			const FVector WheelLocation = ProxyComp->GetComponentTransform().GetLocation();
+
+			// 未消费槽位中距离最近且落在其匹配半径内者
+			auto BestIndex = INDEX_NONE;
+			auto BestDistanceSq = TNumericLimits<float>::Max();
+			for (auto SlotIdx = 0; SlotIdx < Slots.Num(); ++SlotIdx)
+			{
+				if (ConsumedUprights.Contains(Slots[SlotIdx].UprightSU)) continue;
+
+				const float Radius = FMath::Max(Slots[SlotIdx].UprightSU->MatchRadius, 0.0f);
+				const float DistanceSq = FVector::DistSquared(WheelLocation, Slots[SlotIdx].SlotLocation);
+				if (DistanceSq <= Radius * Radius && DistanceSq < BestDistanceSq)
+				{
+					BestIndex = SlotIdx;
+					BestDistanceSq = DistanceSq;
+				}
+			}
+
+			if (BestIndex != INDEX_NONE)
+			{
+				WheelToUpright.Add(SUComp, Slots[BestIndex].UprightSU);
+				ConsumedUprights.Add(Slots[BestIndex].UprightSU);
+				continue;
+			}
+
+			// 无可用槽位：若存在半径内但已被消费的槽位，说明同槽位堆叠了多个轮胎
+			for (const FUprightSlot& Slot : Slots)
+			{
+				if (!ConsumedUprights.Contains(Slot.UprightSU)) continue;
+
+				const float Radius = FMath::Max(Slot.UprightSU->MatchRadius, 0.0f);
+				if (FVector::DistSquared(WheelLocation, Slot.SlotLocation) <= Radius * Radius)
+				{
+					UE_LOG(
+						LogSingularisMorphVehicle,
+						Warning,
+						TEXT(
+							"[RebuildFromSnapshot] Wheel %s is within the match radius of the already occupied upright %s - only one wheel per upright, this wheel becomes a free roller"
+						),
+						*SUComp->GetName(),
+						*GetNameSafe(Slot.UprightSU)
+					);
+					break;
+				}
+			}
+		}
+	}
+
+	// 17) 注册 Lambda：将单个 SU 注册到模拟树。
 	//     通过 SU 的 DrivenComponent 解析物理组件：
-	//     - 物理组件在快照实体中（集群子粒子）→ 复用其粒子索引与静止基准；
+	//     - 物理组件在快照实体中（物理部件粒子）→ 复用其粒子索引与静止基准；
 	//     - 驱动组件缺失或不在本次快照中（纯仿真模块）→ 粒子无效，变换取组件/根相对变换。
 	auto AddEntity = [&](USingularisMorphVehicleSUComponent* SUComp, const int32 ParentIndex) -> int32
 	{
@@ -721,6 +825,11 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		// SU 的动画开关是模块动画的总开关：部分模块类型（引擎、变速箱等）
 		// 不自带动画而不会在 CreateNewCoreModule 中同步该标志，此处统一同步
 		CoreModule->SetAnimationEnabled(SUComp->GetAnimationEnabled());
+
+		// 挂载立轴槽位的车轮：注入槽位配置（转向/轴向/反转）。
+		// 轴向与反转由核心物理路径从模块设置读取，注入必须在入树前一次性完成
+		if (const auto* const* MatchedUpright = WheelToUpright.Find(SUComp))
+			SUComp->ApplySlotConfig(CoreModule, *MatchedUpright);
 
 		// 继承上一轮同 SU 模块的积分状态：重建按几何重建模块，但车轮转角/转速、
 		// 挡位、离合器、悬挂压缩属于积分量，必须延续（见 ModuleSimState）。
@@ -744,7 +853,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		else if (const USceneComponent* RootComp = Owner->GetRootComponent())
 			ComponentTransform = RootComp->GetComponentTransform().GetRelativeTransform(ReferenceTransform);
 
-		// 静止基准：簇集子件首次注册时从快照捕获，此后重建复用。
+		// 静止基准：物理部件首次注册时从快照捕获，此后重建复用。
 		// 快照的 ChildToParent 携带引擎写回的动画位移，直接重读会使基准逐次漂移
 		FTransform RestTransform = FTransform::Identity;
 		if (Entity)
@@ -803,7 +912,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		return ModuleIdx;
 	};
 
-	// 17) 隐式关联建树（单动力链）。
+	// 18) 隐式关联建树（单动力链）。
 	//     拓扑约定：底盘→原动机→离合→变速箱→轮轴→车轮，链上缺项时下游挂到
 	//     最近的现存上游；悬挂挂到配对车轮之下，使叶先序执行时悬挂先于车轮求解，
 	//     车轮同一物理步内即可消费到最新的悬挂法向力。
@@ -850,7 +959,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		                        )
 		                        : INDEX_NONE;
 
-	// 车轮 → 动力链最末端，全部车轮共用单链输出扭矩；
+	// 车轮 → 挂载槽位的挂动力链最末端（受驱动并按槽位转向），
+	// 未匹配的自由轮挂底盘（无驱动、无转向，仅滚动）；
 	// 记录 物理组件 → 车轮索引，供悬挂按驱动组件配对
 	const int32 WheelParentIndex = FirstValidTreeIndex(
 		{AxleIndex, TransmissionIndex, ClutchIndex, PrimeMoverIndex, ChassisIndex}
@@ -858,7 +968,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	TMap<TObjectPtr<UPrimitiveComponent>, int32> WheelIndexByComponent;
 	for (USingularisMorphVehicleSUComponent* SUComp : Wheels)
 	{
-		const int32 WheelIndex = AddEntity(SUComp, WheelParentIndex);
+		const int32 ParentIdx = WheelToUpright.Contains(SUComp) ? WheelParentIndex : ChassisIndex;
+		const int32 WheelIndex = AddEntity(SUComp, ParentIdx);
 		if (WheelIndex == INDEX_NONE) continue;
 
 		if (UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
@@ -900,7 +1011,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (USingularisMorphVehicleSUComponent* SUComp : AuxiliaryModules)
 		AddEntity(SUComp, ChassisIndex);
 
-	// 18) 批量提交到物理线程
+	// 19) 批量提交到物理线程
 	FinalizeModuleUpdates();
 }
 
@@ -1982,7 +2093,7 @@ void USingularisMorphVehicleSimulationComponent::UpdateNonSkeletalAnimations()
 		}
 		if (!ComponentToAnimate || !ComponentToAnimate->IsValidLowLevel()) continue;
 
-		// 模块的静止基准与动画位移均表达在参考空间（集群联合/载具空间），
+		// 模块的静止基准与动画位移均表达在参考空间（适配器参考变换/载具空间），
 		// 而驱动组件可位于其它 Actor（被停靠、动态生成的部件），其父空间与参考空间并不一致，
 		// 故先换算到参考空间叠加动画，再换算回父空间写入。
 		// 适配器缺失（手动注册路径）时以父组件为参考空间，模块变换即按调用方约定提供
@@ -2094,7 +2205,7 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 	CoreModule->SetParticleIndex(ParticleIndex);
 
 	// 5) 设置物理变换（模块静止基准，不含编辑器偏移）。
-	//    以单位变换作「未提供」哨兵：部件恰位于集群原点时会被判为未提供并退回相对组件变换。
+	//    以单位变换作「未提供」哨兵：部件恰位于参考原点时会被判为未提供并退回相对组件变换。
 	//    该判定在重复重建间结果一致，不产生累积漂移
 	const FTransform PhysTransform = PhysicalTransform.Equals(FTransform::Identity)
 		                                 ? ComponentTransform

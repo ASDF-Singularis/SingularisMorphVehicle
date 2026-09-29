@@ -13,6 +13,8 @@ namespace Chaos
 	struct FSimOutputData;
 }
 
+class USingularisUprightSUComponent;
+
 UINTERFACE(Blueprintable, BlueprintType)
 class USingularisMorphVehicleSUInterface : public UInterface
 {
@@ -58,4 +60,10 @@ public:
 	virtual void OnRemoved() {}
 
 	virtual void OnOutputReady(const Chaos::FSimOutputData* OutputData) {}
+
+	/** 建树期的立轴槽位配置注入（模块创建后、入树前调用；默认无操作） */
+	virtual void ApplySlotConfig(
+		Chaos::ISimulationModuleBase* CoreModule,
+		const USingularisUprightSUComponent* UprightSU
+	) {}
 };

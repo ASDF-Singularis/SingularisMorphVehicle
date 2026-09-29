@@ -11,59 +11,7 @@ namespace
 	{
 		return Index >= 0 && Index < SimModuleTree.GetNumNodes();
 	}
-
-	/** 判断节点的祖先链中是否存在满足条件的模块（上溯步数受节点总数限制，防止环导致死循环） */
-	bool HasAncestorMatching(
-		Chaos::FSimModuleTree& SimModuleTree,
-		const int32 StartIndex,
-		const TFunctionRef<bool(const Chaos::ISimulationModuleBase&)>& Predicate
-	)
-	{
-		if (!IsValidTreeIndex(SimModuleTree, StartIndex)) return false;
-
-		const int32 MaxSteps = SimModuleTree.GetNumNodes();
-		auto CurrentIndex = SimModuleTree.GetNode(StartIndex).Parent;
-		for (auto Step = 0; Step <= MaxSteps && IsValidTreeIndex(SimModuleTree, CurrentIndex); ++Step)
-		{
-			if (const Chaos::ISimulationModuleBase* Module = SimModuleTree.GetNode(CurrentIndex).SimModule)
-			{
-				if (Predicate(*Module))
-					return true;
-			}
-			CurrentIndex = SimModuleTree.GetNode(CurrentIndex).Parent;
-		}
-		return false;
-	}
-
-	/** 判断 CandidateIndex 是否位于 NodeIndex 的子树内（防止重挂形成环） */
-	bool IsDescendantOf(
-		Chaos::FSimModuleTree& SimModuleTree,
-		const int32 CandidateIndex,
-		const int32 NodeIndex
-	)
-	{
-		const int32 MaxSteps = SimModuleTree.GetNumNodes();
-		auto CurrentIndex = CandidateIndex;
-		for (auto Step = 0; Step <= MaxSteps && IsValidTreeIndex(SimModuleTree, CurrentIndex); ++Step)
-		{
-			if (CurrentIndex == NodeIndex)
-				return true;
-			CurrentIndex = SimModuleTree.GetNode(CurrentIndex).Parent;
-		}
-		return false;
-	}
-
-	bool IsTorqueSourceModule(const Chaos::ISimulationModuleBase& Module)
-	{
-		return Module.IsSimType<Chaos::FTransmissionSimModule>() || Module.IsSimType<Chaos::FAxleSimModule>();
-	}
-
-	bool IsTransmissionModule(const Chaos::ISimulationModuleBase& Module)
-	{
-		return Module.IsSimType<Chaos::FTransmissionSimModule>();
-	}
 }
-
 
 void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModuleTree>& SimModuleTree)
 {
@@ -90,62 +38,13 @@ void FSingularisMorphVehicleBuilder::FixupTreeLinks(TUniquePtr<Chaos::FSimModule
 			Wheel->SetSuspensionSimTreeIndex(ISimulationModuleBase::INVALID_IDX);
 	}
 
-	// 2) 收集扭矩源槽位：优先挂轮轴，其次挂变速箱
-	int32 FirstAxleIndex = INDEX_NONE;
-	int32 FirstTransmissionIndex = INDEX_NONE;
-	for (auto I = 0; I < NumNodes; I++)
-	{
-		const ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(I);
-		if (!Module) continue;
-
-		if (FirstAxleIndex == INDEX_NONE && Module->IsSimType<FAxleSimModule>())
-			FirstAxleIndex = I;
-		if (FirstTransmissionIndex == INDEX_NONE && Module->IsSimType<FTransmissionSimModule>())
-			FirstTransmissionIndex = I;
-	}
-
-	// 3) 扭矩链修复：车轮必须位于扭矩源（轮轴/变速箱）之下，否则回退挂到首个扭矩源。
-	//    已显式声明扭矩父节点的车轮（祖先链含轮轴或变速箱）保持不变，支持多变速箱/多轮轴拓扑。
-	for (auto I = 0; I < NumNodes; I++)
-	{
-		ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(I);
-		if (!Module || !Module->IsSimType<FWheelBaseInterface>()) continue;
-
-		if (HasAncestorMatching(*SimModuleTree, I, IsTorqueSourceModule))
-			continue;
-
-		const int32 FallbackParent = FirstAxleIndex != INDEX_NONE ? FirstAxleIndex : FirstTransmissionIndex;
-		if (FallbackParent == INDEX_NONE) continue;
-
-		// 防止重挂形成环：回退父节点不得位于车轮子树内
-		if (IsDescendantOf(*SimModuleTree, FallbackParent, I))
-			continue;
-
-		SimModuleTree->Reparent(I, FallbackParent);
-	}
-
-	// 4) 轮轴链修复：轮轴必须位于变速箱之下（若存在变速箱）
-	if (FirstTransmissionIndex != INDEX_NONE)
-	{
-		for (auto I = 0; I < NumNodes; I++)
-		{
-			ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(I);
-			if (!Module || !Module->IsSimType<FAxleSimModule>()) continue;
-
-			if (HasAncestorMatching(*SimModuleTree, I, IsTransmissionModule))
-				continue;
-
-			if (IsDescendantOf(*SimModuleTree, FirstTransmissionIndex, I))
-				continue;
-
-			SimModuleTree->Reparent(I, FirstTransmissionIndex);
-		}
-	}
-
-	// 5) 悬挂↔车轮交叉引用：必须全部重挂完成后再建，否则重挂会把车轮从悬挂子树中
-	//    摘走，而先前写入的双向索引仍指向旧位置（悬挂向已脱离子树的车轮写力）。
-	//    配对唯一时写入；拓扑歧义（一个悬挂挂有多个车轮，或悬挂既是车轮的子节点又挂车轮）
-	//    时保留首个配对并告警，避免后写入的配对覆盖先前配对，使两侧车轮受力不一致
+	// 2) 悬挂↔车轮交叉引用：按父子邻接关系建立双向链接。
+	//    车轮的树内位置由游戏线程的 RebuildFromSnapshot 权威决定（挂载立轴槽位的
+	//    车轮在动力链末端，自由轮挂底盘之下），此处不做任何扭矩链重挂——重挂会
+	//    覆盖游戏线程的自由轮语义（自由轮被强行驱动）。
+	//    配对唯一时写入；拓扑歧义（一个悬挂挂有多个车轮，或悬挂既是车轮的子节点
+	//    又挂车轮）时保留首个配对并告警，避免后写入的配对覆盖先前配对，
+	//    使两侧车轮受力不一致
 	auto LinkWheelSuspension = [](
 		FSuspensionBaseInterface& Suspension,
 		const int32 SuspensionIndex,
