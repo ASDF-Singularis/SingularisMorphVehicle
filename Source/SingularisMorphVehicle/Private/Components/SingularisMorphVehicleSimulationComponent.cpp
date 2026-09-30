@@ -348,7 +348,7 @@ void USingularisMorphVehicleSimulationComponent::FinalizeModuleUpdates()
 {
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Verbose,
+		Display,
 		TEXT("[FinalizeModuleUpdates] VehicleSimulationPT=%s, StoredTreeUpdates pending adds=%d"),
 		VehicleSimulationPT.IsValid() ? TEXT("valid") : TEXT("null"),
 		StoredTreeUpdates.GetNewModules().Num()
@@ -973,7 +973,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Verbose,
+		Display,
 		TEXT("[RebuildFromSnapshot] Incremental sync: %d planned modules, %d removals"),
 		Plan.Num(),
 		GuidsToRemove.Num()

@@ -193,7 +193,7 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentAdded(
 
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Verbose,
+		Display,
 		TEXT("[ClusterUnionAdapter] OnClusterComponentAdded: Component=%s, IsNew=%d, Bones=%d, RemovedBones=%d"),
 		*GetNameSafe(Component),
 		bIsNew ? 1 : 0,
@@ -213,7 +213,7 @@ void USingularisMorphVehicleClusterUnionAdapter::OnClusterComponentRemoved(
 
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Verbose,
+		Display,
 		TEXT("[ClusterUnionAdapter] OnClusterComponentRemoved: Component=%s"),
 		*GetNameSafe(Component)
 	);

@@ -129,7 +129,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 			// 树变更后输出模块结构快照，供物理线程侧问题定位。
 			UE_LOG(
 				LogSingularisMorphVehicle,
-				Verbose,
+				Display,
 				TEXT("=== PT Tree after Fixup: %d nodes ==="),
 				SimModuleTree->GetNumNodes()
 			);
@@ -144,7 +144,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 					Mod->GetDebugString(DebugStr);
 					UE_LOG(
 						LogSingularisMorphVehicle,
-						Verbose,
+						Display,
 						TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
 						N,
 						*DebugStr,
@@ -160,7 +160,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 						auto* Susp = Mod->Cast<Chaos::FSuspensionBaseInterface>();
 						UE_LOG(
 							LogSingularisMorphVehicle,
-							Verbose,
+							Display,
 							TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
 							Susp->GetWheelSimTreeIndex(),
 							Susp->GetMaxSpringLength()
@@ -171,7 +171,7 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 						auto* Wheel = Mod->Cast<Chaos::FWheelBaseInterface>();
 						UE_LOG(
 							LogSingularisMorphVehicle,
-							Verbose,
+							Display,
 							TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
 							Wheel->GetSuspensionSimTreeIndex(),
 							Wheel->GetWheelRadius()
@@ -491,7 +491,7 @@ void FSingularisMorphVehicleSimulation::PerformAdditionalSimWork(
 					{
 						UE_LOG(
 							LogSingularisMorphVehicle,
-							Verbose,
+							Display,
 							TEXT("Suspension[GUID=%d]: WheelSimTreeIndex=INVALID! WheelRadius=0."),
 							Suspension->GetGuid()
 						);
