@@ -86,7 +86,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehiclePhysicsAdapterSnapshot
 	 * 消费端按遍历顺序全量重建模拟树。
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TArray<FSingularisMorphVehiclePhysicsAdapterSnapshotEntity> Entities;
+	TArray<FSingularisMorphVehiclePhysicsAdapterSnapshotEntity> Entities{};
 
 	/** 实体列表为空时返回 true，消费端据此跳过重建 */
 	bool IsEmpty() const { return Entities.IsEmpty(); }
