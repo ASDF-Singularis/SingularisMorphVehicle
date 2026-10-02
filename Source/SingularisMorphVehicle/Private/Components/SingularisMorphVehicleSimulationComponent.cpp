@@ -228,8 +228,9 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 	if (ModuleGuid == INDEX_NONE) return;
 
 	// 1) 通知旧模块终止：模块对象由游戏线程创建，终止回调必须在游戏线程执行，
-	//    用于释放模块在物理对象上建立的外部资源。FSimModuleTree::DeleteNode 只 delete
-	//    模块对象，不会调用 OnTermination_External，若不在此释放，每次重建都会泄漏一份外部资源。
+	//    用于释放悬挂约束等外部资源。FSimModuleTree::DeleteNode 只 delete 模块对象，
+	//    不会调用 OnTermination_External，若不在此释放，每次重建都会泄漏物理悬挂约束，
+	//    旧约束会持续对集群根粒子施加力，导致抖动与车轮飞散。
 	//    模块指针取自游戏线程映射表，不读取物理线程拥有的模拟树。
 	if (Chaos::ISimulationModuleBase** FoundModule = GuidToCoreModule.Find(ModuleGuid))
 	{
@@ -251,7 +252,7 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 	))
 	{
 		// 模块尚未提交给物理线程却不在映射中：删除仍会交给树执行，但终止回调无处可发，
-		// 模块的外部资源会泄漏。模块入树必须经 AddModuleToTree 登记
+		// 悬挂约束等外部资源会泄漏。模块入树必须经 AddModuleToTree 登记
 		ensureMsgf(false, TEXT("[RemoveSimulationModule] Module GUID %d is pending but untracked"), ModuleGuid);
 	}
 
@@ -1044,7 +1045,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 		if (ModuleIdx == INDEX_NONE)
 		{
-			// 模块已创建，入树失败必须自行释放，否则模块对象与其外部资源泄漏
+			// 模块已创建（悬挂类模块此时已建立物理约束），入树失败必须自行释放，
+			// 否则模块对象与其外部资源（悬挂约束）泄漏且约束会持续施力
 			UE_LOG(
 				LogSingularisMorphVehicle,
 				Error,
@@ -1939,13 +1941,13 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 	}
 
 	// 2) 未提交到物理线程的模块无其他所有者，在此终止并释放；
-	//    模块对象在终止回调中释放其外部资源，必须先于删除调用
+	//    模块对象在终止回调中释放悬挂约束等外部资源，必须先于删除调用
 	for (const Chaos::FPendingModuleAdds& Pending : StoredTreeUpdates.GetNewModules())
 	{
 		Chaos::ISimulationModuleBase* Module = Pending.NewSimModule;
 		if (!Module) continue;
 
-		// 已被 RemoveSimulationModule 终止过的模块不重复终止：终止回调会释放模块的
+		// 已被 RemoveSimulationModule 终止过的模块不重复终止：终止回调会释放悬挂约束等
 		// 外部资源，二次调用会对同一句柄重复释放。判据是映射表是否仍持有该模块；
 		// 它已不在模拟树中，只需在此释放对象
 		if (const Chaos::ISimulationModuleBase* const* Live = GuidToCoreModule.Find(Module->GetGuid());
@@ -2023,7 +2025,7 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 
 	// 6) 清理剩余资源。根物理对象句柄指向已销毁的物理状态，必须一并清空：
 	//    重建路径仅在 RootPhysicsObject 为空时重新绑定，
-	//    残留句柄会使新一轮模块全部绑定到已销毁的物理对象（模块外部资源失效）
+	//    残留句柄会使新一轮模块全部绑定到已销毁的物理对象（悬挂约束失效）
 	VehicleSimulationPT.Reset();
 	SimulationModuleTree.Reset();
 	VehiclePhysicsOutput.Reset();
@@ -2033,7 +2035,7 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 
 void USingularisMorphVehicleSimulationComponent::ClearAllSimulationModules()
 {
-	// 1) 逐个移除旧模块（内部会释放模块外部资源并广播移除事件）。
+	// 1) 逐个移除旧模块（内部会释放悬挂约束等外部资源并广播移除事件）。
 	//    以 GuidToCoreModule 为唯一来源：手动注册的模块不会进入组件映射，
 	//    只按组件映射清理会遗漏这些模块
 	TArray<int32> ExistingGuids;
@@ -2387,9 +2389,9 @@ int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 	// 6a) 动画绑定：注册动画槽位，供 PostUpdate 更新渲染变换
 	RegisterModuleAnimationSetup(CoreModule, BoneName, AnimationOffset, InitialTransform);
 
-	// 6b) 通知模块物理对象已就绪（模块在物理对象上建立外部资源）。
+	// 6b) 通知模块物理对象已就绪（悬挂在此创建约束）。
 	//    手动注册路径没有重建流程，模块首次入队时根物理对象可能尚未绑定，
-	//    缺绑会让 OnConstruction_External 不执行
+	//    缺绑会让 OnConstruction_External 不执行，悬挂约束不会创建
 	if (RootPhysicsObject == nullptr)
 	{
 		if (IPhysicsProxyBase* Proxy = GetPhysicsProxy())
