@@ -455,10 +455,23 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 5) 单动力链分拣：底盘/引擎/离合/变速箱/轮轴各取首个实例，多余实例不入树。
-	//    有效底盘 = 无驱动组件（纯仿真模块）或驱动组件仍在本次快照中（仍在装配中）：
-	//    仅以组件是否存在为判据，已离开装配的底盘件仍会被当作有效底盘，
-	//    使整棵树以无效粒子索引重建（力继续施加到装配根粒子）。
 	//    原动机槽由首个引擎占据，无引擎时由首个电机顶替（引擎与电机同为扭矩源）。
+	//
+	//    物理装配存在性：驱动组件为物理部件（UPrimitiveComponent）但不在本次快照中时，
+	//    该部件已脱离装配（轮胎断裂、部件被摧毁等），继续建入树会让模块以无效粒子索引
+	//    绑定到装配根粒子，力仍施加到整车（断轮后照常行驶）。故仅纯仿真模块（无驱动组件）
+	//    或驱动组件在快照中者参与建树；脱离装配的 SU 不入计划，既有模块随差量移除，
+	//    部件回到装配后重新建入
+	const auto IsInPhysicsAssembly = [&EntityMap](USingularisMorphVehicleSUComponent* SUComp) -> bool
+	{
+		if (!SUComp) return false;
+
+		UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
+			SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
+		);
+		return !ProxyComp || EntityMap.Contains(ProxyComp);
+	};
+
 	USingularisMorphVehicleSUComponent* ChassisSU = nullptr;
 	USingularisMorphVehicleSUComponent* PrimeMoverSU = nullptr;
 	USingularisMorphVehicleSUComponent* ClutchSU = nullptr;
@@ -484,25 +497,20 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		{
 		case ESingularisMorphVehicleModuleType::Chassis:
 			++NumChassis;
-			if (!ChassisSU)
-			{
-				UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
-					SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
-				);
-				if (!ProxyComp || EntityMap.Contains(ProxyComp))
-					ChassisSU = SUComp;
-			}
+			if (!ChassisSU && IsInPhysicsAssembly(SUComp))
+				ChassisSU = SUComp;
 			break;
 
 		case ESingularisMorphVehicleModuleType::Engine:
 			// 引擎优先占据原动机槽，后续引擎实例不入树
 			++NumEngine;
-			if (!PrimeMoverSU)
+			if (!PrimeMoverSU && IsInPhysicsAssembly(SUComp))
 				PrimeMoverSU = SUComp;
 			break;
 
 		case ESingularisMorphVehicleModuleType::Motor:
 			// 无引擎时首个电机顶替原动机槽，其余电机作为辅助模块挂到底盘之下
+			if (!IsInPhysicsAssembly(SUComp)) break;
 			if (!PrimeMoverSU)
 				PrimeMoverSU = SUComp;
 			else
@@ -511,37 +519,42 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 		case ESingularisMorphVehicleModuleType::Clutch:
 			++NumClutch;
-			if (!ClutchSU)
+			if (!ClutchSU && IsInPhysicsAssembly(SUComp))
 				ClutchSU = SUComp;
 			break;
 
 		case ESingularisMorphVehicleModuleType::Transmission:
 			++NumTransmission;
-			if (!TransmissionSU)
+			if (!TransmissionSU && IsInPhysicsAssembly(SUComp))
 				TransmissionSU = SUComp;
 			break;
 
 		case ESingularisMorphVehicleModuleType::Axle:
 			++NumAxle;
-			if (!AxleSU)
+			if (!AxleSU && IsInPhysicsAssembly(SUComp))
 				AxleSU = SUComp;
 			break;
 
 		case ESingularisMorphVehicleModuleType::Wheel:
-			Wheels.Add(SUComp);
+			if (IsInPhysicsAssembly(SUComp))
+				Wheels.Add(SUComp);
 			break;
 
 		case ESingularisMorphVehicleModuleType::Suspension:
-			Suspensions.Add(SUComp);
+			if (IsInPhysicsAssembly(SUComp))
+				Suspensions.Add(SUComp);
 			break;
 
 		case ESingularisMorphVehicleModuleType::Upright:
-			// 立轴为纯配置载体，不创建模块不入树，仅在槽位匹配阶段参与
+			// 立轴为纯配置载体，不创建模块不入树，仅在槽位匹配阶段参与；
+			// 槽位标记是定位参照（通常非物理部件），不适用装配存在性过滤：
+			// 过滤掉会让仍存活的轮胎失去槽位配置（转向/轴向/反转）
 			Uprights.Add(SUComp);
 			break;
 
 		default:
-			AuxiliaryModules.Add(SUComp);
+			if (IsInPhysicsAssembly(SUComp))
+				AuxiliaryModules.Add(SUComp);
 			break;
 		}
 	}
@@ -811,7 +824,26 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			}
 
 			if (!PlannedSUs.Contains(SUComp))
+			{
 				RemovedSUs.Add(SUComp);
+
+				// 驱动组件仍在但已不在快照中：部件脱离装配（如轮胎断裂）导致的移除，
+				// 记录以便与「其它计划外模块」（重复实例、配置变更）区分
+				UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
+					SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
+				);
+				if (ProxyComp && !EntityMap.Contains(ProxyComp))
+				{
+					UE_LOG(
+						LogSingularisMorphVehicle,
+						Display,
+						TEXT(
+							"[RebuildFromSnapshot] %s has left the physics assembly - removing its module (the part is no longer in the snapshot)"
+						),
+						*SUComp->GetName()
+					);
+				}
+			}
 		}
 
 		for (FPlanEntry& Entry : Plan)
@@ -995,7 +1027,17 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		if (!SUComp) return INDEX_NONE;
 
 		Chaos::ISimulationModuleBase* CoreModule = SUComp->CreateNewCoreModule();
-		if (!CoreModule) return INDEX_NONE;
+		if (!CoreModule)
+		{
+			// 计划条目静默不入树会让「计划数」与「树内模块数」出现无从对账的缺口，必须可见
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Warning,
+				TEXT("[RebuildFromSnapshot] %s failed to create a core module - module skipped"),
+				*GetNameSafe(SUComp)
+			);
+			return INDEX_NONE;
+		}
 
 		// SU 的动画开关是模块动画的总开关：部分模块类型（引擎、变速箱等）
 		// 不自带动画而不会在 CreateNewCoreModule 中同步该标志，此处统一同步

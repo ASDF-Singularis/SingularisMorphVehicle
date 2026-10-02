@@ -79,7 +79,7 @@ bool USingularisMorphVehicleStaticMeshAdapter::IsDirty() const
 		return true;
 	}
 
-	for (int32 Index = 0; Index < CurrentAssembly.Num(); ++Index)
+	for (auto Index = 0; Index < CurrentAssembly.Num(); ++Index)
 	{
 		if (CurrentAssembly[Index] != CachedAssembly[Index])
 		{
