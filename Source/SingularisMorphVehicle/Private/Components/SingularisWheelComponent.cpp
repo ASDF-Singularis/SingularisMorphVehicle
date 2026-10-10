@@ -1,14 +1,14 @@
-#include "Components/SingularisWheelSUComponent.h"
+#include "Components/SingularisWheelComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include "Components/SingularisUprightSUComponent.h"
+#include "Components/SingularisUprightComponent.h"
 #include "Core/SingularisMorphVehicleWheelSimModule.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisWheelSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisWheelComponent)
 
-USingularisWheelSUComponent::USingularisWheelSUComponent()
+USingularisWheelComponent::USingularisWheelComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -19,7 +19,7 @@ USingularisWheelSUComponent::USingularisWheelSUComponent()
 	bAnimationEnabled = true;
 }
 
-void USingularisWheelSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
+void USingularisWheelComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
 {
 	if (!OutputData) return;
 
@@ -35,7 +35,7 @@ void USingularisWheelSUComponent::OnOutputReady(const Chaos::FSimOutputData* Out
 	}
 }
 
-Chaos::ISimulationModuleBase* USingularisWheelSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisWheelComponent::CreateNewCoreModule() const
 {
 	// 1) 轮胎设置：转向/轴向/反转均为轮位（立轴）配置，由槽位在建树期注入
 	//    （ApplySlotConfig）；此处仅构建自由轮语义的中性基准：
@@ -75,9 +75,9 @@ Chaos::ISimulationModuleBase* USingularisWheelSUComponent::CreateNewCoreModule()
 	return Wheel;
 }
 
-void USingularisWheelSUComponent::ApplySlotConfig(
+void USingularisWheelComponent::ApplySlotConfig(
 	Chaos::ISimulationModuleBase* CoreModule,
-	const USingularisUprightSUComponent* UprightSU
+	const USingularisUprightComponent* UprightSU
 )
 {
 	if (!CoreModule || !UprightSU) return;

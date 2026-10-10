@@ -1,13 +1,13 @@
-#include "Components/SingularisSuspensionSUComponent.h"
+#include "Components/SingularisSuspensionComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
 #include "Core/SingularisMorphVehicleSuspensionSimModule.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisSuspensionSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisSuspensionComponent)
 
-USingularisSuspensionSUComponent::USingularisSuspensionSUComponent()
+USingularisSuspensionComponent::USingularisSuspensionComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -18,7 +18,7 @@ USingularisSuspensionSUComponent::USingularisSuspensionSUComponent()
 	bAnimationEnabled = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisSuspensionSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisSuspensionComponent::CreateNewCoreModule() const
 {
 	// 1) 配置悬挂设置
 	FSingularisMorphSuspensionSettings Settings;

@@ -1,10 +1,10 @@
-#include "Components/SingularisChassisSUComponent.h"
+#include "Components/SingularisChassisComponent.h"
 
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisChassisSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisChassisComponent)
 
-USingularisChassisSUComponent::USingularisChassisSUComponent()
+USingularisChassisComponent::USingularisChassisComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -14,7 +14,7 @@ USingularisChassisSUComponent::USingularisChassisSUComponent()
 	bAutoActivate = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisChassisSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisChassisComponent::CreateNewCoreModule() const
 {
 	// 1) 配置底盘空气动力学设置
 	Chaos::FChassisSettings Settings;

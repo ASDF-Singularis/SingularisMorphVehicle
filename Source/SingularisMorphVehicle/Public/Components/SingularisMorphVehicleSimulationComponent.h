@@ -34,7 +34,7 @@ class USingularisMorphVehiclePhysicsAdapter;
 class IPhysicsProxyBase;
 class AHUD;
 class UCanvas;
-class USingularisMorphVehicleSUComponent;
+class USingularisMorphVehicleBaseComponent;
 
 #pragma region 委托签名
 

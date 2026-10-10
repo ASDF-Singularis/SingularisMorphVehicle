@@ -1,12 +1,12 @@
-#include "Components/SingularisMotorSUComponent.h"
+#include "Components/SingularisMotorComponent.h"
 
 #include <VehicleUtility.h>
 
 #include "Core/SingularisMorphVehicleTorqueSimModules.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMotorSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMotorComponent)
 
-USingularisMotorSUComponent::USingularisMotorSUComponent()
+USingularisMotorComponent::USingularisMotorComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -16,7 +16,7 @@ USingularisMotorSUComponent::USingularisMotorSUComponent()
 	bAutoActivate = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisMotorSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisMotorComponent::CreateNewCoreModule() const
 {
 	Chaos::FMotorSettings Settings;
 

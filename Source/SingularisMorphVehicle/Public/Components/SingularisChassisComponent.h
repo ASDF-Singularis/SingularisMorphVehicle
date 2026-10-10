@@ -3,11 +3,11 @@
 #include <CoreMinimal.h>
 #include <VehicleUtility.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisChassisSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.h"
+#include "SingularisChassisComponent.generated.h"
 
 /**
- * 引力奇点底盘仿真单元组件
+ * 引力奇点底盘组件
  *
  * 定义载具的空气动力学阻力属性，通过物理线程模拟空气阻力与角阻尼。
  * 底盘自身不产生推进力，仅影响物理系统的减速行为。
@@ -16,9 +16,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点底盘仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点底盘组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisChassisSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisChassisComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点底盘仿真单元",
+		Category = "引力奇点底盘组件",
 		meta = (DisplayName = "迎风面积")
 	)
 	float AreaMetresSquared = 0.0f;
@@ -38,7 +38,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点底盘仿真单元",
+		Category = "引力奇点底盘组件",
 		meta = (DisplayName = "阻力系数")
 	)
 	float DragCoefficient = 0.5f;
@@ -47,7 +47,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点底盘仿真单元",
+		Category = "引力奇点底盘组件",
 		meta = (DisplayName = "介质密度")
 	)
 	float DensityOfMedium = Chaos::RealWorldConsts::AirDensity();
@@ -56,7 +56,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点底盘仿真单元",
+		Category = "引力奇点底盘组件",
 		meta = (DisplayName = "X轴倍率")
 	)
 	float XAxisMultiplier = 1.0f;
@@ -65,7 +65,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点底盘仿真单元",
+		Category = "引力奇点底盘组件",
 		meta = (DisplayName = "Y轴倍率")
 	)
 	float YAxisMultiplier = 1.0f;
@@ -74,7 +74,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点底盘仿真单元",
+		Category = "引力奇点底盘组件",
 		meta = (DisplayName = "角阻尼")
 	)
 	float AngularDamping = 0.0f;
@@ -83,7 +83,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisChassisSUComponent();
+	USingularisChassisComponent();
 
 #pragma endregion
 

@@ -1,10 +1,10 @@
-#include "Components/SingularisThrusterSUComponent.h"
+#include "Components/SingularisThrusterComponent.h"
 
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisThrusterSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisThrusterComponent)
 
-USingularisThrusterSUComponent::USingularisThrusterSUComponent()
+USingularisThrusterComponent::USingularisThrusterComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -15,7 +15,7 @@ USingularisThrusterSUComponent::USingularisThrusterSUComponent()
 	bAnimationEnabled = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisThrusterSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisThrusterComponent::CreateNewCoreModule() const
 {
 	Chaos::FThrusterSettings Settings;
 

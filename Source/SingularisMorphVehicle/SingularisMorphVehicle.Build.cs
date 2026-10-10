@@ -26,10 +26,11 @@ public class SingularisMorphVehicle : ModuleRules
 
 				"AnimGraphRuntime",
 
-				"EngineSettings",
-
 				"InputCore",
-				"EnhancedInput"
+				"EnhancedInput",
+
+				"EngineSettings",
+				"DeveloperSettings",
 			]
 		);
 

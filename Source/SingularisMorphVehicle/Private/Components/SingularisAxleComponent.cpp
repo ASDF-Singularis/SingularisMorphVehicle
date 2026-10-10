@@ -1,10 +1,10 @@
-#include "Components/SingularisAxleSUComponent.h"
+#include "Components/SingularisAxleComponent.h"
 
 #include "Core/SingularisMorphVehicleTorqueSimModules.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisAxleSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisAxleComponent)
 
-USingularisAxleSUComponent::USingularisAxleSUComponent()
+USingularisAxleComponent::USingularisAxleComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -14,7 +14,7 @@ USingularisAxleSUComponent::USingularisAxleSUComponent()
 	bAutoActivate = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisAxleSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisAxleComponent::CreateNewCoreModule() const
 {
 	Chaos::FAxleSettings Settings;
 

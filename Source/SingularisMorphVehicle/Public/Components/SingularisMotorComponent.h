@@ -2,11 +2,11 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisMotorSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.h"
+#include "SingularisMotorComponent.generated.h"
 
 /**
- * 引力奇点电机仿真单元组件
+ * 引力奇点电机组件
  *
  * 以转速平方曲线输出扭矩的电驱动力单元，扭矩幅值由油门输入控制，
  * 转速接近零与最大转速时输出衰减、中段转速达到峰值。
@@ -19,9 +19,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点电机仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点电机组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisMotorSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisMotorComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -32,7 +32,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元",
+		Category = "引力奇点电机组件",
 		meta = (DisplayName = "最大扭矩")
 	)
 	float MaxTorque = 200.0f;
@@ -41,7 +41,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元",
+		Category = "引力奇点电机组件",
 		meta = (DisplayName = "最大RPM")
 	)
 	float MaxRPM = 6000.0f;
@@ -50,7 +50,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点电机仿真单元",
+		Category = "引力奇点电机组件",
 		meta = (DisplayName = "电机惯性")
 	)
 	float EngineInertia = 100.0f;
@@ -59,7 +59,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisMotorSUComponent();
+	USingularisMotorComponent();
 
 #pragma endregion
 

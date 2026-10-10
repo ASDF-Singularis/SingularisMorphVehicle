@@ -1,6 +1,6 @@
-#include "Components/SingularisUprightSUComponent.h"
+#include "Components/SingularisUprightComponent.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisUprightSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisUprightComponent)
 
 namespace
 {
@@ -32,7 +32,7 @@ namespace
 	}
 }
 
-USingularisUprightSUComponent::USingularisUprightSUComponent()
+USingularisUprightComponent::USingularisUprightComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -49,7 +49,7 @@ USingularisUprightSUComponent::USingularisUprightSUComponent()
 	SteeringCurve->AddKey(193.0f, 0.3f);
 }
 
-FSingularisMorphWheelSteeringSettings USingularisUprightSUComponent::BuildSteeringSettings(
+FSingularisMorphWheelSteeringSettings USingularisUprightComponent::BuildSteeringSettings(
 	const float InitialSteeringAngleDegrees
 ) const
 {

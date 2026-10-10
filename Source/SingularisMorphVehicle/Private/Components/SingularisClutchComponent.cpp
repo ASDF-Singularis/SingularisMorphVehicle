@@ -1,10 +1,10 @@
-#include "Components/SingularisClutchSUComponent.h"
+#include "Components/SingularisClutchComponent.h"
 
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisClutchSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisClutchComponent)
 
-USingularisClutchSUComponent::USingularisClutchSUComponent()
+USingularisClutchComponent::USingularisClutchComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -14,7 +14,7 @@ USingularisClutchSUComponent::USingularisClutchSUComponent()
 	bAutoActivate = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisClutchSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisClutchComponent::CreateNewCoreModule() const
 {
 	Chaos::FClutchSettings Settings;
 	Settings.ClutchStrength = ClutchStrength;

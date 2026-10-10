@@ -2,11 +2,11 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisSuspensionSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.h"
+#include "SingularisSuspensionComponent.generated.h"
 
 /**
- * 引力奇点悬挂仿真单元组件
+ * 引力奇点悬挂组件
  *
  * 模拟弹簧-阻尼悬挂系统，通过射线/球体碰撞检测确定悬挂压缩量，
  * 将车重传递至地面并产生抓地力。与车轮模块协同工作。
@@ -15,9 +15,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点悬挂仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点悬挂组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisSuspensionSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisSuspensionComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -28,7 +28,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "悬挂轴")
 	)
 	FVector SuspensionAxis = FVector(0, 0, -1);
@@ -37,7 +37,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "悬挂最大上升")
 	)
 	float SuspensionMaxRaise = 10.0f;
@@ -46,7 +46,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "悬挂最大下降")
 	)
 	float SuspensionMaxDrop = 30.0f;
@@ -55,7 +55,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "弹簧劲度")
 	)
 	float SpringRate = 200.0f;
@@ -64,7 +64,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "弹簧预载")
 	)
 	float SpringPreload = 50.0f;
@@ -73,7 +73,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "弹簧阻尼")
 	)
 	float SpringDamping = 0.9f;
@@ -82,7 +82,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点悬挂仿真单元",
+		Category = "引力奇点悬挂组件",
 		meta = (DisplayName = "悬挂力效应")
 	)
 	float SuspensionForceEffect = 100.0f;
@@ -91,7 +91,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisSuspensionSUComponent();
+	USingularisSuspensionComponent();
 
 #pragma endregion
 

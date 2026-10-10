@@ -18,9 +18,9 @@
 #include <SimModule/SimulationModuleBase.h>
 
 #include "SingularisMorphVehicle.h"
-#include "Components/SingularisMorphVehicleSUComponent.h"
-#include "Components/SingularisTransmissionSUComponent.h"
-#include "Components/SingularisUprightSUComponent.h"
+#include "Components/SingularisMorphVehicleBaseComponent.h"
+#include "Components/SingularisTransmissionComponent.h"
+#include "Components/SingularisUprightComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
@@ -259,7 +259,7 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 	// 2) 清理映射缓存，防止悬空引用随增删累积
 	if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(ModuleGuid))
 	{
-		if (auto* SUComp = Cast<USingularisMorphVehicleSUComponent>(Component->Get()))
+		if (auto* SUComp = Cast<USingularisMorphVehicleBaseComponent>(Component->Get()))
 		{
 			SUComp->SetModuleGuid(INDEX_NONE);
 			SUComp->SetTreeIndex(INDEX_NONE);
@@ -433,11 +433,11 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//    a) 快照实体上通过映射子系统注册的 SU（物理部件）；
 	//    b) Owner 上未出现在快照中的 SU（纯仿真模块，如未参与物理装配的引擎/变速箱）。
 	//    单一来源保证各 Pass 的遍历与类型分派一致，避免遗漏动力链模块。
-	TArray<USingularisMorphVehicleSUComponent*> AllSUComponents;
+	TArray<USingularisMorphVehicleBaseComponent*> AllSUComponents;
 	for (const auto& Entity : Snapshot.Entities)
 	{
 		if (!Entity.PrimitiveComponent) continue;
-		for (USingularisMorphVehicleSUComponent* SUComp :
+		for (USingularisMorphVehicleBaseComponent* SUComp :
 		     Subsystem->FindSUComponents(Entity.PrimitiveComponent))
 		{
 			if (SUComp)
@@ -449,7 +449,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		Owner->GetComponents<UActorComponent>(ActorComponents);
 		for (UActorComponent* ActorComponent : ActorComponents)
 		{
-			if (auto* SUComp = Cast<USingularisMorphVehicleSUComponent>(ActorComponent))
+			if (auto* SUComp = Cast<USingularisMorphVehicleBaseComponent>(ActorComponent))
 				AllSUComponents.AddUnique(SUComp);
 		}
 	}
@@ -462,7 +462,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//    绑定到装配根粒子，力仍施加到整车（断轮后照常行驶）。故仅纯仿真模块（无驱动组件）
 	//    或驱动组件在快照中者参与建树；脱离装配的 SU 不入计划，既有模块随差量移除，
 	//    部件回到装配后重新建入
-	const auto IsInPhysicsAssembly = [&EntityMap](USingularisMorphVehicleSUComponent* SUComp) -> bool
+	const auto IsInPhysicsAssembly = [&EntityMap](USingularisMorphVehicleBaseComponent* SUComp) -> bool
 	{
 		if (!SUComp) return false;
 
@@ -472,16 +472,16 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		return !ProxyComp || EntityMap.Contains(ProxyComp);
 	};
 
-	USingularisMorphVehicleSUComponent* ChassisSU = nullptr;
-	USingularisMorphVehicleSUComponent* PrimeMoverSU = nullptr;
-	USingularisMorphVehicleSUComponent* ClutchSU = nullptr;
-	USingularisMorphVehicleSUComponent* TransmissionSU = nullptr;
-	USingularisMorphVehicleSUComponent* AxleSU = nullptr;
+	USingularisMorphVehicleBaseComponent* ChassisSU = nullptr;
+	USingularisMorphVehicleBaseComponent* PrimeMoverSU = nullptr;
+	USingularisMorphVehicleBaseComponent* ClutchSU = nullptr;
+	USingularisMorphVehicleBaseComponent* TransmissionSU = nullptr;
+	USingularisMorphVehicleBaseComponent* AxleSU = nullptr;
 
-	TArray<USingularisMorphVehicleSUComponent*> Wheels;
-	TArray<USingularisMorphVehicleSUComponent*> Suspensions;
-	TArray<USingularisMorphVehicleSUComponent*> AuxiliaryModules;
-	TArray<USingularisMorphVehicleSUComponent*> Uprights;
+	TArray<USingularisMorphVehicleBaseComponent*> Wheels;
+	TArray<USingularisMorphVehicleBaseComponent*> Suspensions;
+	TArray<USingularisMorphVehicleBaseComponent*> AuxiliaryModules;
+	TArray<USingularisMorphVehicleBaseComponent*> Uprights;
 
 	auto NumChassis = 0;
 	auto NumEngine = 0;
@@ -489,7 +489,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	auto NumTransmission = 0;
 	auto NumAxle = 0;
 
-	for (USingularisMorphVehicleSUComponent* SUComp : AllSUComponents)
+	for (USingularisMorphVehicleBaseComponent* SUComp : AllSUComponents)
 	{
 		if (!SUComp) continue;
 
@@ -599,19 +599,19 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//    每个槽位至多消费一个轮胎）。匹配结果决定车轮的树内位置与槽位配置注入；
 	//    未匹配的轮胎为自由轮：挂底盘之下，无驱动、无转向，仅提供滚动。
 	//    相对几何随车体整体运动保持不变，匹配仅在拓扑变更时重算即可保持稳定
-	TMap<USingularisMorphVehicleSUComponent*, USingularisUprightSUComponent*> WheelToUpright;
+	TMap<USingularisMorphVehicleBaseComponent*, USingularisUprightComponent*> WheelToUpright;
 	{
 		struct FUprightSlot
 		{
-			USingularisUprightSUComponent* UprightSU = nullptr;
+			USingularisUprightComponent* UprightSU = nullptr;
 			FVector SlotLocation = FVector::ZeroVector;
 		};
 		TArray<FUprightSlot> Slots;
 		Slots.Reserve(Uprights.Num());
 
-		for (USingularisMorphVehicleSUComponent* SUComp : Uprights)
+		for (USingularisMorphVehicleBaseComponent* SUComp : Uprights)
 		{
-			auto* UprightSU = Cast<USingularisUprightSUComponent>(SUComp);
+			auto* UprightSU = Cast<USingularisUprightComponent>(SUComp);
 			const USceneComponent* SlotMarker = UprightSU
 				                                    ? Cast<USceneComponent>(
 					                                    UprightSU->DrivenComponent.GetComponent(UprightSU->GetOwner())
@@ -633,8 +633,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			Slots.Add({UprightSU, SlotMarker->GetComponentTransform().GetLocation()});
 		}
 
-		TSet<USingularisMorphVehicleSUComponent*> ConsumedUprights;
-		for (USingularisMorphVehicleSUComponent* SUComp : Wheels)
+		TSet<USingularisMorphVehicleBaseComponent*> ConsumedUprights;
+		for (USingularisMorphVehicleBaseComponent* SUComp : Wheels)
 		{
 			// 无驱动组件的纯仿真车轮无法定位，保持自由轮
 			const UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
@@ -702,31 +702,31 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 	struct FPlanEntry
 	{
-		USingularisMorphVehicleSUComponent* SU = nullptr;
-		USingularisMorphVehicleSUComponent* ParentSU = nullptr; // nullptr = 根（底盘）
-		USingularisUprightSUComponent* MatchedUpright = nullptr; // 车轮：槽位配置注入源
+		USingularisMorphVehicleBaseComponent* SU = nullptr;
+		USingularisMorphVehicleBaseComponent* ParentSU = nullptr; // nullptr = 根（底盘）
+		USingularisUprightComponent* MatchedUpright = nullptr; // 车轮：槽位配置注入源
 		UPrimitiveComponent* ProxyComp = nullptr; // 驱动组件解析结果
 		const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity* Entity = nullptr;
 		EPlanStatus Status = EPlanStatus::Add;
 	};
 
 	TArray<FPlanEntry> Plan;
-	TMap<USingularisMorphVehicleSUComponent*, int32> PlanIndexBySU;
+	TMap<USingularisMorphVehicleBaseComponent*, int32> PlanIndexBySU;
 	{
 		auto FirstValidSU = [](
-			const std::initializer_list<USingularisMorphVehicleSUComponent*> Candidates
+			const std::initializer_list<USingularisMorphVehicleBaseComponent*> Candidates
 		)
-			-> USingularisMorphVehicleSUComponent*
+			-> USingularisMorphVehicleBaseComponent*
 		{
-			for (USingularisMorphVehicleSUComponent* Candidate : Candidates)
+			for (USingularisMorphVehicleBaseComponent* Candidate : Candidates)
 				if (Candidate) return Candidate;
 			return nullptr;
 		};
 
 		auto AddPlanEntry = [&](
-			USingularisMorphVehicleSUComponent* SUComp,
-			USingularisMorphVehicleSUComponent* ParentSU,
-			USingularisUprightSUComponent* MatchedUpright
+			USingularisMorphVehicleBaseComponent* SUComp,
+			USingularisMorphVehicleBaseComponent* ParentSU,
+			USingularisUprightComponent* MatchedUpright
 		) -> void
 		{
 			FPlanEntry Entry;
@@ -749,20 +749,20 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			AddPlanEntry(AxleSU, FirstValidSU({TransmissionSU, ClutchSU, PrimeMoverSU, ChassisSU}), nullptr);
 
 		// 车轮 → 挂载槽位的挂动力链最末端，自由轮挂底盘
-		USingularisMorphVehicleSUComponent* WheelParentSU = FirstValidSU(
+		USingularisMorphVehicleBaseComponent* WheelParentSU = FirstValidSU(
 			{AxleSU, TransmissionSU, ClutchSU, PrimeMoverSU, ChassisSU}
 		);
-		for (USingularisMorphVehicleSUComponent* SUComp : Wheels)
+		for (USingularisMorphVehicleBaseComponent* SUComp : Wheels)
 		{
-			if (USingularisUprightSUComponent* const* MatchedUpright = WheelToUpright.Find(SUComp))
+			if (USingularisUprightComponent* const* MatchedUpright = WheelToUpright.Find(SUComp))
 				AddPlanEntry(SUComp, WheelParentSU, *MatchedUpright);
 			else
 				AddPlanEntry(SUComp, ChassisSU, nullptr);
 		}
 
 		// 悬挂 → 同一驱动组件上的车轮之下；配对失败挂底盘并告警
-		TMap<TObjectPtr<UPrimitiveComponent>, USingularisMorphVehicleSUComponent*> WheelSUByComponent;
-		for (USingularisMorphVehicleSUComponent* SUComp : Wheels)
+		TMap<TObjectPtr<UPrimitiveComponent>, USingularisMorphVehicleBaseComponent*> WheelSUByComponent;
+		for (USingularisMorphVehicleBaseComponent* SUComp : Wheels)
 		{
 			if (UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
 				SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
@@ -770,9 +770,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 				WheelSUByComponent.FindOrAdd(ProxyComp) = SUComp;
 		}
 
-		for (USingularisMorphVehicleSUComponent* SUComp : Suspensions)
+		for (USingularisMorphVehicleBaseComponent* SUComp : Suspensions)
 		{
-			USingularisMorphVehicleSUComponent* PairedWheelSU = nullptr;
+			USingularisMorphVehicleBaseComponent* PairedWheelSU = nullptr;
 			if (UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
 				SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
 			))
@@ -794,7 +794,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			AddPlanEntry(SUComp, PairedWheelSU ? PairedWheelSU : ChassisSU, nullptr);
 		}
 
-		for (USingularisMorphVehicleSUComponent* SUComp : AuxiliaryModules)
+		for (USingularisMorphVehicleBaseComponent* SUComp : AuxiliaryModules)
 			AddPlanEntry(SUComp, ChassisSU, nullptr);
 	}
 
@@ -803,18 +803,18 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//     新建 = 此前无模块；替换 = 任一属性变化（模块设置与粒子绑定在构建期固化，
 	//     无法原位修改，故「修改」表现为「先移除再新建」）；
 	//     计划外的现存模块、失效映射键（SU 随部件销毁）与未纳管模块一并移除
-	TArray<USingularisMorphVehicleSUComponent*> RemovedSUs;
+	TArray<USingularisMorphVehicleBaseComponent*> RemovedSUs;
 	TArray<TObjectPtr<UActorComponent>> StaleMapKeys;
 	TArray<int32> UnmanagedGuids;
 	{
-		TSet<USingularisMorphVehicleSUComponent*> PlannedSUs;
+		TSet<USingularisMorphVehicleBaseComponent*> PlannedSUs;
 		PlannedSUs.Reserve(Plan.Num());
 		for (const FPlanEntry& Entry : Plan)
 			PlannedSUs.Add(Entry.SU);
 
 		for (const auto& Pair : ComponentToPhysicsObjects)
 		{
-			auto* SUComp = Cast<USingularisMorphVehicleSUComponent>(Pair.Key.Get());
+			auto* SUComp = Cast<USingularisMorphVehicleBaseComponent>(Pair.Key.Get());
 			if (!IsValid(SUComp))
 			{
 				// 键已失效（SU 随部件 Actor 销毁）：其模块仍须移除，
@@ -986,7 +986,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//     既有节点索引不因删除改变（槽位仅入空闲表复用），后续新增的绝对父索引仍有效
 	TArray<int32> GuidsToRemove;
 	GuidsToRemove.Reserve(RemovedSUs.Num() + Plan.Num() + UnmanagedGuids.Num());
-	for (USingularisMorphVehicleSUComponent* SUComp : RemovedSUs)
+	for (USingularisMorphVehicleBaseComponent* SUComp : RemovedSUs)
 	{
 		if (const FSingularisMorphVehicleComponentData* Existing = ComponentToPhysicsObjects.Find(SUComp))
 			GuidsToRemove.AddUnique(Existing->Guid);
@@ -1023,7 +1023,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//     驱动组件/实体/槽位配置源已在计划阶段解析；父树索引由批处理阶段解析并传入
 	auto AddEntity = [&](const FPlanEntry& Entry, const int32 ParentIndex) -> int32
 	{
-		USingularisMorphVehicleSUComponent* SUComp = Entry.SU;
+		USingularisMorphVehicleBaseComponent* SUComp = Entry.SU;
 		if (!SUComp) return INDEX_NONE;
 
 		Chaos::ISimulationModuleBase* CoreModule = SUComp->CreateNewCoreModule();
@@ -1161,7 +1161,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		BatchIdByPlanIndex[I] = ParentBatchId;
 	}
 
-	TMap<USingularisMorphVehicleSUComponent*, int32> LocalIndexBySU;
+	TMap<USingularisMorphVehicleBaseComponent*, int32> LocalIndexBySU;
 	for (const TArray<int32>& Batch : Batches)
 	{
 		LocalIndexBySU.Reset();
@@ -1807,8 +1807,8 @@ void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 
 	if (const AActor* Owner = GetOwner())
 	{
-		if (const USingularisTransmissionSUComponent* TransmissionSU =
-			Owner->FindComponentByClass<USingularisTransmissionSUComponent>())
+		if (const USingularisTransmissionComponent* TransmissionSU =
+			Owner->FindComponentByClass<USingularisTransmissionComponent>())
 		{
 			MaxGear = FMath::Max(1, TransmissionSU->ForwardRatios.Num());
 			MinGear = -FMath::Max(1, TransmissionSU->ReverseRatios.Num());

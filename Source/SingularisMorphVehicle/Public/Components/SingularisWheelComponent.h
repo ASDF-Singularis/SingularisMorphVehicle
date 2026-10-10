@@ -2,8 +2,8 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisWheelSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.h"
+#include "SingularisWheelComponent.generated.h"
 
 #pragma region 委托签名
 
@@ -13,10 +13,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnWheelTouchChange, int32, Guid, b
 
 #pragma endregion
 
-class USingularisUprightSUComponent;
+class USingularisUprightComponent;
 
 /**
- * 引力奇点车轮仿真单元组件
+ * 引力奇点车轮组件
  *
  * 模拟车轮的转动、摩擦与制动行为，支持 ABS、牵引力控制、手刹等高级特性。
  * 通过物理线程与悬挂模块协同工作，输出数据通过 OnWheelTouchChange 事件回调至游戏线程。
@@ -30,9 +30,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点车轮仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点车轮组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisWheelSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisWheelComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -43,7 +43,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮组件|几何",
 		meta = (DisplayName = "车轮半径")
 	)
 	float WheelRadius = 30.0f;
@@ -52,7 +52,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮组件|几何",
 		meta = (DisplayName = "车轮宽度")
 	)
 	float WheelWidth = 20.0f;
@@ -61,7 +61,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮组件|几何",
 		meta = (DisplayName = "车轮惯性")
 	)
 	float WheelInertia = 10.0f;
@@ -70,7 +70,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|几何",
+		Category = "引力奇点车轮组件|几何",
 		meta = (DisplayName = "最大旋转角速度")
 	)
 	float MaxRotationVel = 100.0f;
@@ -79,7 +79,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮组件|摩擦",
 		meta = (DisplayName = "摩擦倍率")
 	)
 	float FrictionMultiplier = 2.0f;
@@ -88,7 +88,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮组件|摩擦",
 		meta = (DisplayName = "侧滑图倍率")
 	)
 	float LateralSlipGraphMultiplier = 1.0f;
@@ -97,7 +97,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮组件|摩擦",
 		meta = (DisplayName = "侧偏刚度")
 	)
 	float CorneringStiffness = 1000.0f;
@@ -106,7 +106,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮组件|摩擦",
 		meta = (DisplayName = "侧滑图")
 	)
 	TArray<FVector2D> LateralSlipGraph{};
@@ -115,7 +115,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮组件|摩擦",
 		meta = (DisplayName = "侧滑角上限")
 	)
 	float SlipAngleLimit = 8.0f;
@@ -124,7 +124,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|摩擦",
+		Category = "引力奇点车轮组件|摩擦",
 		meta = (DisplayName = "打滑衰减")
 	)
 	float SlipModifier = 0.9f;
@@ -133,7 +133,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|辅助",
+		Category = "引力奇点车轮组件|辅助",
 		meta = (DisplayName = "启用ABS")
 	)
 	bool bABSEnabled = true;
@@ -142,7 +142,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|辅助",
+		Category = "引力奇点车轮组件|辅助",
 		meta = (DisplayName = "启用牵引力控制")
 	)
 	bool bTractionControlEnabled = true;
@@ -151,7 +151,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮组件|制动",
 		meta = (DisplayName = "最大制动扭矩")
 	)
 	float MaxBrakeTorque = 2000.0f;
@@ -160,7 +160,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮组件|制动",
 		meta = (DisplayName = "启用手刹")
 	)
 	bool bHandbrakeEnabled = false;
@@ -169,7 +169,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮组件|制动",
 		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled")
 	)
 	float HandbrakeTorque = 2000.0f;
@@ -178,7 +178,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮组件|制动",
 		meta = (DisplayName = "启用自动手刹")
 	)
 	bool bAutoHandbrakeEnabled = false;
@@ -187,7 +187,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|制动",
+		Category = "引力奇点车轮组件|制动",
 		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled")
 	)
 	float AutoHandbrakeVelocityThreshold = 10.0f;
@@ -196,7 +196,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点车轮仿真单元|偏移",
+		Category = "引力奇点车轮组件|偏移",
 		meta = (DisplayName = "力偏移")
 	)
 	FVector ForceOffset = FVector::ZeroVector;
@@ -211,7 +211,7 @@ public:
 	/** 蓝图表单的车轮触地变化事件 */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点车轮仿真单元|事件分发器",
+		Category = "引力奇点车轮组件|事件分发器",
 		meta = (DisplayName = "触地变化")
 	)
 	FOnWheelTouchChange OnWheelTouchChangeEvent{};
@@ -237,7 +237,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisWheelSUComponent();
+	USingularisWheelComponent();
 
 #pragma endregion
 
@@ -255,7 +255,7 @@ public:
 	/** 建树期立轴槽位配置注入：转向/轴向/反转写入本组件创建的车轮模块（见 ApplyUprightSlotConfig） */
 	virtual void ApplySlotConfig(
 		Chaos::ISimulationModuleBase* CoreModule,
-		const USingularisUprightSUComponent* UprightSU
+		const USingularisUprightComponent* UprightSU
 	) override;
 
 #pragma endregion

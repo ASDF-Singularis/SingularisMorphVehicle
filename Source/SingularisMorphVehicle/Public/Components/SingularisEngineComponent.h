@@ -3,11 +3,11 @@
 #include <CoreMinimal.h>
 #include <Curves/CurveFloat.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisEngineSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.h"
+#include "SingularisEngineComponent.generated.h"
 
 /**
- * 引力奇点引擎仿真单元组件
+ * 引力奇点引擎组件
  *
  * 通过扭矩曲线定义引擎输出特性，向变速箱/离合器输送扭矩。
  * 模拟怠速、引擎制动、惯性等内燃机行为，输出数据通过 OnOutputReady 传递至游戏线程。
@@ -16,9 +16,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点引擎仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点引擎组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisEngineSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisEngineComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|扭矩",
+		Category = "引力奇点引擎组件|扭矩",
 		meta = (DisplayName = "扭矩曲线")
 	)
 	FRuntimeFloatCurve TorqueCurve{};
@@ -38,7 +38,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|扭矩",
+		Category = "引力奇点引擎组件|扭矩",
 		meta = (DisplayName = "最大扭矩")
 	)
 	float MaxTorque = 200.0f;
@@ -47,7 +47,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|转速",
+		Category = "引力奇点引擎组件|转速",
 		meta = (DisplayName = "最大RPM", ClampMin = "1", UIMin = "1", ClampMax = "65535", UIMax = "65535")
 	)
 	int32 MaxRPM = 5000;
@@ -56,7 +56,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|转速",
+		Category = "引力奇点引擎组件|转速",
 		meta = (DisplayName = "怠速RPM")
 	)
 	int32 EngineIdleRPM = 1200;
@@ -65,7 +65,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|动力学",
+		Category = "引力奇点引擎组件|动力学",
 		meta = (DisplayName = "引擎制动效应")
 	)
 	float EngineBrakeEffect = 150.0f;
@@ -74,7 +74,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点引擎仿真单元|动力学",
+		Category = "引力奇点引擎组件|动力学",
 		meta = (DisplayName = "引擎惯性")
 	)
 	float EngineInertia = 1000.0f;
@@ -83,7 +83,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisEngineSUComponent();
+	USingularisEngineComponent();
 
 #pragma endregion
 

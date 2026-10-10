@@ -2,11 +2,11 @@
 
 #include <CoreMinimal.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
-#include "SingularisAxleSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.h"
+#include "SingularisAxleComponent.generated.h"
 
 /**
- * 引力奇点轮轴仿真单元组件
+ * 引力奇点轮轴组件
  *
  * 带惯性的扭矩传递节点，插入变速箱与车轮之间构成差速器节点，
  * 扭矩沿模拟树的父子方向向下游传递。单动力链约定下由 SimulationComponent
@@ -16,9 +16,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点轮轴仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点轮轴组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisAxleSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisAxleComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -29,7 +29,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点轮轴仿真单元",
+		Category = "引力奇点轮轴组件",
 		meta = (DisplayName = "轮轴惯性")
 	)
 	float AxleInertia = 1.0f;
@@ -38,7 +38,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisAxleSUComponent();
+	USingularisAxleComponent();
 
 #pragma endregion
 

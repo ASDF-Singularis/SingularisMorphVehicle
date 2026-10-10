@@ -1,13 +1,13 @@
-#include "Components/SingularisMorphVehicleSUComponent.h"
+#include "Components/SingularisMorphVehicleBaseComponent.h"
 
 #include <Components/PrimitiveComponent.h>
 #include <Engine/World.h>
 
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisMorphVehicleBaseComponent)
 
-USingularisMorphVehicleSUComponent::USingularisMorphVehicleSUComponent()
+USingularisMorphVehicleBaseComponent::USingularisMorphVehicleBaseComponent()
 {
 	SetIsReplicatedByDefault(false);
 
@@ -17,7 +17,7 @@ USingularisMorphVehicleSUComponent::USingularisMorphVehicleSUComponent()
 	bAutoActivate = true;
 }
 
-void USingularisMorphVehicleSUComponent::BeginPlay()
+void USingularisMorphVehicleBaseComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -42,7 +42,7 @@ void USingularisMorphVehicleSUComponent::BeginPlay()
 	}
 }
 
-void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void USingularisMorphVehicleBaseComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	// 以 BeginPlay 记录的物理组件为准注销：重新解析 DrivenComponent 在驱动组件
 	// 先于本组件销毁时必然失败，会把条目永久留在映射表中
@@ -69,7 +69,7 @@ void USingularisMorphVehicleSUComponent::EndPlay(const EEndPlayReason::Type EndP
 	Super::EndPlay(EndPlayReason);
 }
 
-void USingularisMorphVehicleSUComponent::SetTreeIndex(const int32 NewValue)
+void USingularisMorphVehicleBaseComponent::SetTreeIndex(const int32 NewValue)
 {
 	TreeIndex = NewValue;
 }

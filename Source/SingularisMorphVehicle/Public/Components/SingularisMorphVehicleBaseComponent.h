@@ -3,20 +3,19 @@
 #include <CoreMinimal.h>
 #include <Components/ActorComponent.h>
 #include <SimModule/ModuleInput.h>
-#include <SimModule/SimulationModuleBase.h>
 
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
-#include "SingularisMorphVehicleSUComponent.generated.h"
+#include "SingularisMorphVehicleBaseComponent.generated.h"
 
 /**
- * 引力奇点变形载具基础仿真单元组件
+ * 引力奇点变形载具基础组件
  *
  * 继承自 UActorComponent，作为纯数据配置容器为载具模拟模块提供实现基类。
  * 通过驱动组件字段关联物理部件，不再依赖 SceneComponent 附着层级。
  */
 UCLASS(Abstract, Blueprintable)
-class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSUComponent : public UActorComponent,
-                                                                      public ISingularisMorphVehicleSUInterface
+class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleBaseComponent : public UActorComponent,
+                                                                        public ISingularisMorphVehicleSUInterface
 {
 	GENERATED_BODY()
 
@@ -27,7 +26,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元",
+		Category = "引力奇点变形载具基础组件",
 		meta = (DisplayName = "驱动组件", UseComponentPicker, AllowedClasses = "/Script/Engine.SceneComponent")
 	)
 	FComponentReference DrivenComponent{};
@@ -36,7 +35,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元|动画",
+		Category = "引力奇点变形载具基础组件|动画",
 		meta = (DisplayName = "启用动画")
 	)
 	bool bAnimationEnabled = false;
@@ -45,7 +44,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元|动画",
+		Category = "引力奇点变形载具基础组件|动画",
 		meta = (DisplayName = "骨骼名称", EditCondition = "bAnimationEnabled")
 	)
 	FName BoneName = NAME_None;
@@ -54,7 +53,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元|动画",
+		Category = "引力奇点变形载具基础组件|动画",
 		meta = (DisplayName = "输入配置")
 	)
 	TArray<FModuleInputSetup> InputConfig{};
@@ -63,7 +62,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元|动画",
+		Category = "引力奇点变形载具基础组件|动画",
 		meta = (DisplayName = "动画偏移", EditCondition = "bAnimationEnabled")
 	)
 	FVector AnimationOffset = FVector::ZeroVector;
@@ -72,7 +71,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadWrite,
-		Category = "引力奇点基础仿真单元|动画",
+		Category = "引力奇点变形载具基础组件|动画",
 		meta = (DisplayName = "变换偏移")
 	)
 	FTransform TransformOffset = FTransform::Identity;
@@ -106,7 +105,7 @@ private:
 public:
 #pragma region Constructors
 
-	USingularisMorphVehicleSUComponent();
+	USingularisMorphVehicleBaseComponent();
 
 #pragma endregion
 

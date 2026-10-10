@@ -1,10 +1,10 @@
-#include "Components/SingularisAerofoilSUComponent.h"
+#include "Components/SingularisAerofoilComponent.h"
 
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisAerofoilSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisAerofoilComponent)
 
-USingularisAerofoilSUComponent::USingularisAerofoilSUComponent()
+USingularisAerofoilComponent::USingularisAerofoilComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -15,7 +15,7 @@ USingularisAerofoilSUComponent::USingularisAerofoilSUComponent()
 	bAnimationEnabled = true;
 }
 
-Chaos::ISimulationModuleBase* USingularisAerofoilSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisAerofoilComponent::CreateNewCoreModule() const
 {
 	Chaos::FAerofoilSettings Settings;
 

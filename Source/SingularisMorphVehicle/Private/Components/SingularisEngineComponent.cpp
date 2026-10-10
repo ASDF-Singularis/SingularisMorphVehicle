@@ -1,11 +1,11 @@
-#include "Components/SingularisEngineSUComponent.h"
+#include "Components/SingularisEngineComponent.h"
 
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisEngineSUComponent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisEngineComponent)
 
-USingularisEngineSUComponent::USingularisEngineSUComponent()
+USingularisEngineComponent::USingularisEngineComponent()
 {
 	SetIsReplicatedByDefault(true);
 
@@ -20,12 +20,12 @@ USingularisEngineSUComponent::USingularisEngineSUComponent()
 	TorqueCurve.GetRichCurve()->AddKey(1.0f, 0.75f);
 }
 
-void USingularisEngineSUComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
+void USingularisEngineComponent::OnOutputReady(const Chaos::FSimOutputData* OutputData)
 {
 	// 引擎模块当前无需处理输出数据，由子类按需重写
 }
 
-Chaos::ISimulationModuleBase* USingularisEngineSUComponent::CreateNewCoreModule() const
+Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() const
 {
 	// 0) 核心结构以 uint16 存储转速，超出即静默截断，故在此钳制
 	const int32 ClampedMaxRPM = FMath::Clamp(MaxRPM, 1, static_cast<int32>(MAX_uint16));

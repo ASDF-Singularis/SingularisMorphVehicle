@@ -3,9 +3,9 @@
 #include <CoreMinimal.h>
 #include <Curves/CurveFloat.h>
 
-#include "SingularisMorphVehicleSUComponent.h"
+#include "SingularisMorphVehicleBaseComponent.h"
 #include "Core/SingularisMorphVehicleWheelSimModule.h"
-#include "SingularisUprightSUComponent.generated.h"
+#include "SingularisUprightComponent.generated.h"
 
 /**
  * 引力奇点立轴转向设置。
@@ -122,7 +122,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 };
 
 /**
- * 引力奇点立轴仿真单元组件
+ * 引力奇点立轴组件
  *
  * 车架上的轮位槽配置载体：持有该轮位的转向、轴向与反转方向配置，
  * 不创建模拟模块、不进入模拟树。轮胎安装进槽位匹配半径内时，
@@ -138,9 +138,9 @@ UCLASS(
 	Blueprintable,
 	BlueprintType,
 	ClassGroup = ("SingularisMorphVehicle"),
-	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点立轴仿真单元组件")
+	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点立轴组件")
 )
-class SINGULARISMORPHVEHICLE_API USingularisUprightSUComponent : public USingularisMorphVehicleSUComponent
+class SINGULARISMORPHVEHICLE_API USingularisUprightComponent : public USingularisMorphVehicleBaseComponent
 {
 	GENERATED_BODY()
 
@@ -151,7 +151,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
-		Category = "引力奇点立轴仿真单元",
+		Category = "引力奇点立轴组件",
 		meta = (DisplayName = "匹配半径", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float MatchRadius = 50.0f;
@@ -160,7 +160,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
-		Category = "引力奇点立轴仿真单元",
+		Category = "引力奇点立轴组件",
 		meta = (DisplayName = "轴向类型")
 	)
 	ESingularisMorphVehicleWheelAxisType AxisType = ESingularisMorphVehicleWheelAxisType::X;
@@ -169,7 +169,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
-		Category = "引力奇点立轴仿真单元",
+		Category = "引力奇点立轴组件",
 		meta = (DisplayName = "反转方向")
 	)
 	bool ReverseDirection = false;
@@ -178,7 +178,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
-		Category = "引力奇点立轴仿真单元|转向",
+		Category = "引力奇点立轴组件|转向",
 		meta = (DisplayName = "启用转向")
 	)
 	bool bSteeringEnabled = false;
@@ -187,7 +187,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
-		Category = "引力奇点立轴仿真单元|转向",
+		Category = "引力奇点立轴组件|转向",
 		meta = (DisplayName = "最大转向角度", EditCondition = "bSteeringEnabled", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float MaxSteeringAngle = 35.0f;
@@ -196,7 +196,7 @@ public:
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
-		Category = "引力奇点立轴仿真单元|转向",
+		Category = "引力奇点立轴组件|转向",
 		meta = (DisplayName = "转向设置", EditCondition = "bSteeringEnabled")
 	)
 	FSingularisMorphVehicleSteeringSetup SteeringSetup{};
@@ -205,7 +205,7 @@ public:
 
 #pragma region Constructors
 
-	USingularisUprightSUComponent();
+	USingularisUprightComponent();
 
 #pragma endregion
 
