@@ -59,6 +59,32 @@ namespace
 
 		return true;
 	}
+
+	/**
+	 * 逐通道读取组件的碰撞响应，构造完整响应容器。
+	 */
+	FCollisionResponseContainer CaptureCollisionResponses(const UPrimitiveComponent& Component)
+	{
+		FCollisionResponseContainer Responses{};
+		for (auto ChannelIndex = 0; ChannelIndex < ECC_MAX; ++ChannelIndex)
+		{
+			const auto Channel = static_cast<ECollisionChannel>(ChannelIndex);
+			Responses.SetResponse(Channel, Component.GetCollisionResponseToChannel(Channel));
+		}
+		return Responses;
+	}
+
+	/**
+	 * 将完整响应容器逐通道写入组件。
+	 */
+	void ApplyCollisionResponses(UPrimitiveComponent& Component, const FCollisionResponseContainer& Responses)
+	{
+		for (auto ChannelIndex = 0; ChannelIndex < ECC_MAX; ++ChannelIndex)
+		{
+			const auto Channel = static_cast<ECollisionChannel>(ChannelIndex);
+			Component.SetCollisionResponseToChannel(Channel, Responses.GetResponse(Channel));
+		}
+	}
 }
 
 USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationComponent()
@@ -199,6 +225,9 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	CurrentAsyncOutput = nullptr;
 	NextAsyncOutput = nullptr;
 	OutputInterpolationAlpha = 0.0f;
+
+	// 6) 恢复全部被抑制的车轮碰撞：物理状态拆除（含对象池回收）后不得残留抑制状态
+	RestoreAllWheelCollisionSuppression();
 
 	Super::OnDestroyPhysicsState();
 }
@@ -462,7 +491,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	//    绑定到装配根粒子，力仍施加到整车（断轮后照常行驶）。故仅纯仿真模块（无驱动组件）
 	//    或驱动组件在快照中者参与建树；脱离装配的 SU 不入计划，既有模块随差量移除，
 	//    部件回到装配后重新建入
-	const auto IsInPhysicsAssembly = [&EntityMap](USingularisMorphVehicleBaseComponent* SUComp) -> bool
+	const auto IsInPhysicsAssembly = [&EntityMap](const USingularisMorphVehicleBaseComponent* SUComp) -> bool
 	{
 		if (!SUComp) return false;
 
@@ -934,7 +963,29 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		}
 	}
 
-	// 13) 无差异：全部保留且无移除项时直接返回（冗余的变更信号不产生任何重建工作）
+	// 车轮碰撞抑制对账（活动车轮集合 → 抑制/恢复）。
+	// 与拓扑是否变更无关：任何一帧都必须对账，否则外部（组件物理状态重建、载具逻辑）
+	// 恢复过的轮胎碰撞会在「无拓扑差异」帧被静默保留，重新成为解析悬挂之外的第二支撑。
+	// 定义为局部可复用体，供「无差异」早退路径与重建收尾路径共用
+	const auto ReconcileActiveWheelCollision = [this, &Wheels]()
+	{
+		TSet<UPrimitiveComponent*> ActiveWheelComponents;
+		ActiveWheelComponents.Reserve(Wheels.Num());
+
+		for (USingularisMorphVehicleBaseComponent* WheelSU : Wheels)
+		{
+			if (!WheelSU) continue;
+
+			if (UPrimitiveComponent* WheelComponent = Cast<UPrimitiveComponent>(
+				WheelSU->DrivenComponent.GetComponent(WheelSU->GetOwner())
+			))
+				ActiveWheelComponents.Add(WheelComponent);
+		}
+
+		ReconcileWheelCollisionSuppression(ActiveWheelComponents);
+	};
+
+	// 13) 无差异：全部保留且无移除项时跳过全部重建工作，仅对账车轮碰撞后返回
 	auto bHasBuilds = false;
 	for (const FPlanEntry& Entry : Plan)
 	{
@@ -946,7 +997,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	if (!bHasBuilds && RemovedSUs.IsEmpty() && StaleMapKeys.IsEmpty() && UnmanagedGuids.IsEmpty())
+	{
+		ReconcileActiveWheelCollision();
 		return;
+	}
 
 	// 14) 裁剪静止基准缓存：仅保留本次快照仍存活的（驱动组件, 粒子）键。
 	//     部件离开物理装配后其粒子不再存在，条目随之失效；部件重新加入装配时粒子已重建，
@@ -1220,11 +1274,16 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		StoredTreeUpdates = Chaos::FSimTreeUpdates();
 	}
 
-	// 20) 收尾：提交残余更新（仅移除项时无批次循环），刷新物理属性与复制结构标记
+	// 20) 车轮碰撞对账：抑制活动轮胎的碰撞（解除其与地面的物理接触，避免成为解析悬挂之外的
+	//     第二支撑），恢复已分离轮胎的原始碰撞。以「活动集合 vs 已记录集合」对账，
+	//     天然覆盖共享组件（轮胎与悬挂常共用同一网格）、替换与组件销毁
+	ReconcileActiveWheelCollision();
+
+	// 21) 收尾：提交残余更新（仅移除项时无批次循环），刷新物理属性与复制结构标记
 	FinalizeModuleUpdates();
 }
 
-void USingularisMorphVehicleSimulationComponent::UpdatePhysicalProperties()
+void USingularisMorphVehicleSimulationComponent::UpdatePhysicalProperties() const
 {
 	IPhysicsProxyBase* Proxy = GetPhysicsProxy();
 
@@ -1741,7 +1800,7 @@ const FTransform& USingularisMorphVehicleSimulationComponent::GetComponentTransf
 	return FTransform::Identity;
 }
 
-const Chaos::FSimOutputData* USingularisMorphVehicleSimulationComponent::GetOutputData(const int32 ModuleGuid)
+const Chaos::FSimOutputData* USingularisMorphVehicleSimulationComponent::GetOutputData(const int32 ModuleGuid) const
 {
 	return VehiclePhysicsOutput
 		       ? VehiclePhysicsOutput->GetOutputData(ModuleGuid)
@@ -1752,7 +1811,7 @@ void USingularisMorphVehicleSimulationComponent::SetInputBool(
 	const FName Name,
 	const bool Value,
 	const EModuleInputBufferActionType BufferAction
-)
+) const
 {
 	if (InputProducer)
 		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
@@ -1762,7 +1821,7 @@ void USingularisMorphVehicleSimulationComponent::SetInputInteger(
 	const FName Name,
 	const int32 Value,
 	const EModuleInputBufferActionType BufferAction
-)
+) const
 {
 	if (InputProducer)
 		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
@@ -1772,7 +1831,7 @@ void USingularisMorphVehicleSimulationComponent::SetInputAxis1D(
 	const FName Name,
 	const double Value,
 	const EModuleInputBufferActionType BufferAction
-)
+) const
 {
 	if (InputProducer)
 		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
@@ -1782,7 +1841,7 @@ void USingularisMorphVehicleSimulationComponent::SetInputAxis2D(
 	const FName Name,
 	const FVector2D Value,
 	const EModuleInputBufferActionType BufferAction
-)
+) const
 {
 	if (InputProducer)
 		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
@@ -1792,7 +1851,7 @@ void USingularisMorphVehicleSimulationComponent::SetInputAxis3D(
 	const FName Name,
 	const FVector Value,
 	const EModuleInputBufferActionType BufferAction
-)
+) const
 {
 	if (InputProducer)
 		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
@@ -1896,40 +1955,48 @@ void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, con
 
 void USingularisMorphVehicleSimulationComponent::SetLocallyControlled(const bool bInLocallyControlled)
 {
-	if (bUsingNetworkPhysicsPrediction && NetworkPhysicsComponent)
-	{
-		// NetworkPhysicsComponent 是唯一权威来源，防止 SimulatedProxy 误标本地
-		if (GetOwner() && GetOwner()->GetLocalRole() != ROLE_SimulatedProxy)
-			NetworkPhysicsComponent->SetIsRelayingLocalInputs(bInLocallyControlled);
-		else
-			NetworkPhysicsComponent->SetIsRelayingLocalInputs(false);
-		return;
-	}
+	// 显式声明本地控制：SimulatedProxy 的输入来自服务器，无论传入何值均不标记本地
+	const AActor* Owner = GetOwner();
+	const bool bCanBeLocal = Owner && Owner->GetLocalRole() != ROLE_SimulatedProxy;
+	bIsLocallyControlled = bInLocallyControlled && bCanBeLocal;
 
-	// 无 NetworkPhysicsComponent 时的回退路径
-	bIsLocallyControlled = false;
-	if (GetOwner() && GetOwner()->GetLocalRole() != ROLE_SimulatedProxy)
-		bIsLocallyControlled = bInLocallyControlled;
+	// 启用网络物理预测时同步本地输入中继标记
+	if (bUsingNetworkPhysicsPrediction && NetworkPhysicsComponent)
+		NetworkPhysicsComponent->SetIsRelayingLocalInputs(bIsLocallyControlled);
 }
 
 bool USingularisMorphVehicleSimulationComponent::IsLocallyControlled() const
 {
-	// 网络物理预测开启时，NetworkPhysicsComponent 是唯一权威来源
-	if (bUsingNetworkPhysicsPrediction && NetworkPhysicsComponent)
-		return NetworkPhysicsComponent->IsLocallyControlled();
-
+	// 1) 显式声明优先：Control/Release 等外部流程通过 SetLocallyControlled 声明本地控制，
+	//    启用网络物理预测时该声明同样必须生效（否则物理线程会把本地输入覆盖为零）
 	if (bIsLocallyControlled)
 		return true;
 
-	// 回退：通过 Owner Pawn 的控制器判断
-	if (const AActor* Owner = GetOwner())
+	// 2) NetworkPhysicsComponent 已判定为本地控制
+	if (bUsingNetworkPhysicsPrediction && NetworkPhysicsComponent && NetworkPhysicsComponent->IsLocallyControlled())
+		return true;
+
+	const AActor* Owner = GetOwner();
+	if (!Owner) return false;
+
+	// 3) SimulatedProxy 的输入来自服务器，绝不判定为本地
+	if (Owner->GetLocalRole() == ROLE_SimulatedProxy)
+		return false;
+
+	// 4) 单机世界不存在远端权威，本机即本地控制
+	if (const UWorld* World = GetWorld())
 	{
-		if (const APawn* Pawn = Cast<APawn>(Owner))
-		{
-			if (const APlayerController* PlayerController = Cast<APlayerController>(Pawn->GetController()))
-				return PlayerController->IsLocalController();
-		}
+		if (World->GetNetMode() == NM_Standalone)
+			return true;
 	}
+
+	// 5) 本地玩家控制的 Pawn
+	if (const APawn* Pawn = Cast<APawn>(Owner))
+	{
+		if (const APlayerController* PlayerController = Cast<APlayerController>(Pawn->GetController()))
+			return PlayerController->IsLocalController();
+	}
+
 	return false;
 }
 
@@ -2098,6 +2165,9 @@ void USingularisMorphVehicleSimulationComponent::ClearAllSimulationModules()
 
 	// 3) 提交删除到物理线程
 	FinalizeModuleUpdates();
+
+	// 4) 恢复全部被抑制的车轮碰撞：模块已全部清除，无车轮处于模拟状态
+	RestoreAllWheelCollisionSuppression();
 }
 
 IPhysicsProxyBase* USingularisMorphVehicleSimulationComponent::GetPhysicsProxy() const
@@ -2105,8 +2175,7 @@ IPhysicsProxyBase* USingularisMorphVehicleSimulationComponent::GetPhysicsProxy()
 	// 1) 优先从适配器获取
 	if (PhysicsAdapter)
 	{
-		IPhysicsProxyBase* Proxy = PhysicsAdapter->GetPhysicsProxy();
-		if (Proxy)
+		if (IPhysicsProxyBase* Proxy = PhysicsAdapter->GetPhysicsProxy())
 		{
 			CachedPhysicsProxy = Proxy;
 			return Proxy;
@@ -2142,7 +2211,7 @@ int32 USingularisMorphVehicleSimulationComponent::GenerateNewGuid()
 
 void USingularisMorphVehicleSimulationComponent::AssimilateComponentInputs(
 	TArray<FModuleInputSetup>& OutCombinedInputs
-)
+) const
 {
 	// 1) 组件级控制输入配置作为基准
 	OutCombinedInputs = InputConfig;
@@ -2361,7 +2430,7 @@ void USingularisMorphVehicleSimulationComponent::BroadcastModuleAddedEvent(
 	const FName& ModuleType,
 	const int32 Guid,
 	const int32 TreeIndex
-)
+) const
 {
 	OnSimulationModuleAddedNativeEvent.Broadcast(ModuleType, Guid, TreeIndex);
 	OnSimulationModuleAddedEvent.Broadcast(ModuleType, Guid, TreeIndex);
@@ -2371,7 +2440,7 @@ void USingularisMorphVehicleSimulationComponent::BroadcastModuleRemovedEvent(
 	const FName& ModuleType,
 	const int32 Guid,
 	const int32 TreeIndex
-)
+) const
 {
 	OnSimulationModuleRemovedNativeEvent.Broadcast(ModuleType, Guid, TreeIndex);
 	OnSimulationModuleRemovedEvent.Broadcast(ModuleType, Guid, TreeIndex);
@@ -2538,6 +2607,80 @@ void USingularisMorphVehicleSimulationComponent::PruneModuleRestPoses(
 
 	for (const FSingularisMorphModuleRestPoseKey& Key : StaleKeys)
 		ModuleRestPoses.Remove(Key);
+}
+
+void USingularisMorphVehicleSimulationComponent::SuppressWheelCollision(UPrimitiveComponent* WheelComponent)
+{
+	// 1) 无效组件或已抑制的目标直接跳过（幂等）
+	if (!IsValid(WheelComponent)) return;
+
+	const TWeakObjectPtr<UPrimitiveComponent> Key{WheelComponent};
+	if (SuppressedWheelCollisions.Contains(Key)) return;
+
+	// 2) 记录原始碰撞配置，供分离或拆除时精确恢复（只记录本方法会改动的字段）
+	FSingularisMorphWheelCollisionSnapshot Snapshot;
+	Snapshot.CollisionEnabled = WheelComponent->GetCollisionEnabled();
+	Snapshot.CollisionResponses = CaptureCollisionResponses(*WheelComponent);
+	SuppressedWheelCollisions.Add(Key, Snapshot);
+
+	// 3) 施加模拟期配置：启用模式解除物理接触，逐通道响应保留所需查询
+	ApplyCollisionResponses(*WheelComponent, SimulatedWheelCollisionResponses);
+	WheelComponent->SetCollisionEnabled(SimulatedWheelCollisionEnabled);
+}
+
+void USingularisMorphVehicleSimulationComponent::RestoreWheelCollision(
+	const TWeakObjectPtr<UPrimitiveComponent>& WheelComponent
+)
+{
+	// 1) 未记录的目标不需要恢复（从未被抑制）
+	FSingularisMorphWheelCollisionSnapshot Snapshot;
+	if (!SuppressedWheelCollisions.RemoveAndCopyValue(WheelComponent, Snapshot)) return;
+
+	// 2) 组件已销毁：无法恢复，仅移除记录
+	UPrimitiveComponent* Component = WheelComponent.Get();
+	if (!IsValid(Component)) return;
+
+	// 3) 逐项写回原始配置
+	ApplyCollisionResponses(*Component, Snapshot.CollisionResponses);
+	Component->SetCollisionEnabled(Snapshot.CollisionEnabled);
+}
+
+void USingularisMorphVehicleSimulationComponent::ReconcileWheelCollisionSuppression(
+	const TSet<UPrimitiveComponent*>& ActiveWheelComponents
+)
+{
+	// 1) 抑制当前活动但尚未抑制的车轮组件
+	for (UPrimitiveComponent* WheelComponent : ActiveWheelComponents)
+		SuppressWheelCollision(WheelComponent);
+
+	// 2) 恢复已记录但不再活动（或已销毁）的车轮组件
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> StaleEntries;
+	StaleEntries.Reserve(SuppressedWheelCollisions.Num());
+	for (const auto& Pair : SuppressedWheelCollisions)
+	{
+		UPrimitiveComponent* Tracked = Pair.Key.Get();
+		if (!Tracked || !ActiveWheelComponents.Contains(Tracked))
+			StaleEntries.Add(Pair.Key);
+	}
+
+	for (const TWeakObjectPtr<UPrimitiveComponent>& Entry : StaleEntries)
+		RestoreWheelCollision(Entry);
+}
+
+void USingularisMorphVehicleSimulationComponent::RestoreAllWheelCollisionSuppression()
+{
+	if (SuppressedWheelCollisions.IsEmpty()) return;
+
+	for (const auto& Pair : SuppressedWheelCollisions)
+	{
+		if (UPrimitiveComponent* Component = Pair.Key.Get())
+		{
+			ApplyCollisionResponses(*Component, Pair.Value.CollisionResponses);
+			Component->SetCollisionEnabled(Pair.Value.CollisionEnabled);
+		}
+	}
+
+	SuppressedWheelCollisions.Empty();
 }
 
 void USingularisMorphVehicleSimulationComponent::OnSimulationModuleInitialized(

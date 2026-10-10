@@ -36,6 +36,18 @@ class AHUD;
 class UCanvas;
 class USingularisMorphVehicleBaseComponent;
 
+/**
+ * 车轮模拟期碰撞抑制的原始状态快照。
+ *
+ * 记录抑制前组件的碰撞启用模式与逐通道响应，供轮胎分离或载具拆除时逐项恢复；
+ * 抑制过程不改变碰撞物体类型，故不记录该字段。
+ */
+struct FSingularisMorphWheelCollisionSnapshot
+{
+	ECollisionEnabled::Type CollisionEnabled = ECollisionEnabled::QueryAndPhysics;
+	FCollisionResponseContainer CollisionResponses{};
+};
+
 #pragma region 委托签名
 
 DECLARE_MULTICAST_DELEGATE_ThreeParams(
@@ -236,6 +248,35 @@ public:
 	)
 	float DefaultSurfaceFriction = 0.7f;
 
+	/**
+	 * 模拟期间施加到车轮驱动组件的碰撞启用模式。
+	 *
+	 * 默认 QueryOnly：轮胎不参与物理接触（不成为解析悬挂之外的第二支撑），
+	 * 但保留查询响应，可被射线与重叠检测命中。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变型载具仿真|车轮碰撞",
+		meta = (DisplayName = "车轮模拟期碰撞启用")
+	)
+	TEnumAsByte<ECollisionEnabled::Type> SimulatedWheelCollisionEnabled = ECollisionEnabled::QueryOnly;
+
+	/**
+	 * 模拟期间施加到车轮驱动组件的逐通道碰撞响应。
+	 *
+	 * 与 SuspensionTraceCollisionResponses 配套：把悬挂射线所用通道（SuspensionCollisionChannel）
+	 * 在此设为忽略，可避免悬挂射线命中轮胎自身。物理接触由 SimulatedWheelCollisionEnabled 关闭，
+	 * 本响应仅决定查询交互；默认阻止全部通道。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变型载具仿真|车轮碰撞",
+		meta = (DisplayName = "车轮模拟期碰撞响应")
+	)
+	FCollisionResponseContainer SimulatedWheelCollisionResponses{};
+
 #pragma endregion
 
 #pragma region 事件分发器
@@ -304,6 +345,14 @@ private:
 	 * 条目在每次重建后按当前快照裁剪，不随部件反复增删无界累积。
 	 */
 	TMap<FSingularisMorphModuleRestPoseKey, FSingularisMorphModuleRestPose> ModuleRestPoses{};
+
+	/**
+	 * 已抑制碰撞的车轮驱动组件 → 原始碰撞配置（仅游戏线程）。
+	 *
+	 * 键为弱引用，组件销毁后条目在下一次对账时裁剪。用于轮胎分离、载具解体或
+	 * 物理状态拆除时精确恢复原始碰撞，避免被回收复用的组件残留「被抑制」状态。
+	 */
+	TMap<TWeakObjectPtr<UPrimitiveComponent>, FSingularisMorphWheelCollisionSnapshot> SuppressedWheelCollisions{};
 
 	/** 缓存的物理代理（仅游戏线程） */
 	mutable IPhysicsProxyBase* CachedPhysicsProxy = nullptr;
@@ -459,7 +508,7 @@ public:
 	void RebuildFromSnapshot(const FSingularisMorphVehiclePhysicsAdapterSnapshot& Snapshot);
 
 	/** 更新物理阻尼属性 */
-	void UpdatePhysicalProperties();
+	void UpdatePhysicalProperties() const;
 
 	/** 获取模块动画配置（可修改）
 	 *
@@ -578,7 +627,7 @@ public:
 	const FSingularisMorphVehicleAsyncInput* GetCurrentAsyncInput() const { return CurrentAsyncInput; }
 
 	/** 按模块 GUID 获取最近的输出数据 */
-	const Chaos::FSimOutputData* GetOutputData(int32 ModuleGuid);
+	const Chaos::FSimOutputData* GetOutputData(int32 ModuleGuid) const;
 
 #pragma endregion
 
@@ -594,7 +643,7 @@ public:
 		const FName Name,
 		const bool Value,
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
+	) const;
 
 	/** 写入整数控制输入 */
 	UFUNCTION(
@@ -606,7 +655,7 @@ public:
 		const FName Name,
 		const int32 Value,
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
+	) const;
 
 	/** 写入一维轴控制输入 */
 	UFUNCTION(
@@ -618,7 +667,7 @@ public:
 		const FName Name,
 		const double Value,
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
+	) const;
 
 	/** 写入二维轴控制输入 */
 	UFUNCTION(
@@ -630,7 +679,7 @@ public:
 		const FName Name,
 		const FVector2D Value,
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
+	) const;
 
 	/** 写入三维轴控制输入 */
 	UFUNCTION(
@@ -642,7 +691,7 @@ public:
 		const FName Name,
 		const FVector Value,
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
+	) const;
 
 	/** 设置目标挡位（手动变速箱） */
 	UFUNCTION(
@@ -766,7 +815,7 @@ private:
 	int32 GenerateNewGuid();
 
 	/** 聚合所有 SU 组件的输入配置（去重） */
-	void AssimilateComponentInputs(TArray<FModuleInputSetup>& OutCombinedInputs);
+	void AssimilateComponentInputs(TArray<FModuleInputSetup>& OutCombinedInputs) const;
 
 	/** 初始化输入生产者与输入容器（配置变更时幂等重建） */
 	void SetupInputConfiguration(bool bForceReinitialize = false);
@@ -779,8 +828,8 @@ private:
 		int32 Guid
 	) const;
 
-	void BroadcastModuleAddedEvent(const FName& ModuleType, int32 Guid, int32 TreeIndex);
-	void BroadcastModuleRemovedEvent(const FName& ModuleType, int32 Guid, int32 TreeIndex);
+	void BroadcastModuleAddedEvent(const FName& ModuleType, int32 Guid, int32 TreeIndex) const;
+	void BroadcastModuleRemovedEvent(const FName& ModuleType, int32 Guid, int32 TreeIndex) const;
 
 	/**
 	 * 内部模块注册（Internal API）。
@@ -841,6 +890,29 @@ private:
 
 	/** 按当前快照裁剪静止基准缓存，丢弃已离开物理装配的部件（粒子不再存在）的条目 */
 	void PruneModuleRestPoses(const TSet<FSingularisMorphModuleRestPoseKey>& LiveKeys);
+
+	/**
+	 * 抑制单个车轮驱动组件的碰撞。
+	 *
+	 * 记录原始启用模式与逐通道响应后，按 SimulatedWheelCollision* 施加模拟期配置。
+	 * 目标已记录时幂等跳过，不覆盖原始快照。
+	 */
+	void SuppressWheelCollision(UPrimitiveComponent* WheelComponent);
+
+	/** 恢复单个车轮组件的原始碰撞配置并删除记录；组件已销毁时仅删除记录 */
+	void RestoreWheelCollision(const TWeakObjectPtr<UPrimitiveComponent>& WheelComponent);
+
+	/**
+	 * 按当前活动车轮集合对账碰撞抑制状态。
+	 *
+	 * 对活动车轮中尚未抑制者施加抑制、对已记录但不再活动者恢复、对已销毁者裁剪记录。
+	 * 以「期望集合 vs 已记录集合」对账，天然覆盖共享组件（轮胎与悬挂共用网格）、
+	 * 替换（先移除再新增）与组件销毁。
+	 */
+	void ReconcileWheelCollisionSuppression(const TSet<UPrimitiveComponent*>& ActiveWheelComponents);
+
+	/** 恢复全部被抑制的车轮组件（载具解体、物理状态拆除时调用） */
+	void RestoreAllWheelCollisionSuppression();
 
 #pragma endregion
 
