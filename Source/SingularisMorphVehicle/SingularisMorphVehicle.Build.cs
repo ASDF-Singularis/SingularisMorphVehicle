@@ -26,11 +26,14 @@ public class SingularisMorphVehicle : ModuleRules
 
 				"AnimGraphRuntime",
 
+				"AudioExtensions",
+				"MetasoundEngine",
+
 				"InputCore",
 				"EnhancedInput",
 
 				"EngineSettings",
-				"DeveloperSettings",
+				"DeveloperSettings"
 			]
 		);
 
