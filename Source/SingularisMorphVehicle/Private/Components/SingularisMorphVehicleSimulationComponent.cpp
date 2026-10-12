@@ -18,10 +18,13 @@
 #include <SimModule/SimulationModuleBase.h>
 
 #include "SingularisMorphVehicle.h"
+#include "Components/SingularisEngineComponent.h"
 #include "Components/SingularisMorphVehicleBaseComponent.h"
+#include "Components/SingularisMotorComponent.h"
 #include "Components/SingularisTransmissionComponent.h"
 #include "Components/SingularisUprightComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
+#include "Core/SingularisMorphVehicleSuspensionSimModule.h"
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
@@ -216,6 +219,10 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	CurrentGear = 0;
 	bHasGearData = false;
 	TargetGearInput = INDEX_NONE;
+	LastEngagedGear = 0;
+	bHasGearShiftBaseline = false;
+	SlippingWheelGuids.Empty();
+	BottomedOutSuspensionGuids.Empty();
 	EngineRPM = 0.0f;
 	EngineTorque = 0.0f;
 	bIsLocallyControlled = false;
@@ -298,7 +305,16 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 		PhysicsGuidToComponent.Remove(ModuleGuid);
 	}
 
-	// 3) 维护动画槽位：删除指向被移除模块的槽位，被多个模块共享的槽位由仍存活的模块接管，
+	// 3) 事件状态清理：打滑中的车轮被移除时广播停止事件，防止音效等观察者驻留；
+	//    悬挂触底为一次性冲击事件，仅清理记录不产生配对广播
+	if (SlippingWheelGuids.Contains(ModuleGuid))
+	{
+		SlippingWheelGuids.Remove(ModuleGuid);
+		OnWheelSlipStoppedEvent.Broadcast(ModuleGuid);
+	}
+	BottomedOutSuspensionGuids.Remove(ModuleGuid);
+
+	// 4) 维护动画槽位：删除指向被移除模块的槽位，被多个模块共享的槽位由仍存活的模块接管，
 	//    其余槽位按删除情况整体前移，保持槽位下标与数组下标一致。
 	//    槽位表由动画线程共享，重构期间持锁
 	{
@@ -367,10 +383,10 @@ void USingularisMorphVehicleSimulationComponent::RemoveSimulationModule(const in
 		}
 	}
 
-	// 4) 排队删除树节点
+	// 5) 排队删除树节点
 	StoredTreeUpdates.RemoveNode(ModuleGuid);
 
-	// 5) 拓扑已变更：标记待重建网络复制结构
+	// 6) 拓扑已变更：标记待重建网络复制结构
 	bPendingReplicationStructureRebuild = true;
 }
 
@@ -1319,34 +1335,6 @@ void USingularisMorphVehicleSimulationComponent::UpdatePhysicalProperties() cons
 	}
 }
 
-void USingularisMorphVehicleSimulationComponent::CacheRootPhysicsObject(
-	IPhysicsProxyBase* Proxy
-)
-{
-	Chaos::EnsureIsInGameThreadContext();
-	using namespace Chaos;
-	RootPhysicsObject = nullptr;
-
-	if (!Proxy) return;
-
-	switch (Proxy->GetType())
-	{
-	case EPhysicsProxyType::ClusterUnionProxy:
-		if (auto* CUProxy = static_cast<FClusterUnionPhysicsProxy*>(Proxy))
-			RootPhysicsObject = CUProxy->GetPhysicsObjectHandle();
-		break;
-
-	case EPhysicsProxyType::SingleParticleProxy:
-		if (auto* ParticleProxy = static_cast<FSingleParticlePhysicsProxy*>(Proxy))
-			RootPhysicsObject = ParticleProxy->GetPhysicsObject();
-		break;
-
-	default: break;
-	}
-
-	CachedPhysicsProxy = Proxy;
-}
-
 void USingularisMorphVehicleSimulationComponent::SetInputProducerClass(
 	TSubclassOf<UVehicleInputProducerBase> InInputProducerClass,
 	const bool bForceNewInstance
@@ -1387,6 +1375,119 @@ void USingularisMorphVehicleSimulationComponent::RemoveActorsToIgnore(TArray<AAc
 
 		ActorsToIgnore.Remove(Actor);
 	}
+}
+
+void USingularisMorphVehicleSimulationComponent::SetInputBool(
+	const FName Name,
+	const bool Value,
+	const EModuleInputBufferActionType BufferAction
+) const
+{
+	if (InputProducer)
+		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetInputInteger(
+	const FName Name,
+	const int32 Value,
+	const EModuleInputBufferActionType BufferAction
+) const
+{
+	if (InputProducer)
+		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetInputAxis1D(
+	const FName Name,
+	const double Value,
+	const EModuleInputBufferActionType BufferAction
+) const
+{
+	if (InputProducer)
+		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetInputAxis2D(
+	const FName Name,
+	const FVector2D Value,
+	const EModuleInputBufferActionType BufferAction
+) const
+{
+	if (InputProducer)
+		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetInputAxis3D(
+	const FName Name,
+	const FVector Value,
+	const EModuleInputBufferActionType BufferAction
+) const
+{
+	if (InputProducer)
+		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
+{
+	// 请求的挡位先按变速箱的实际挡数钳制：变速箱会把目标挡位夹到
+	// [-倒挡数, 前进挡数]，越界请求会让“当前挡位 ≠ 目标挡位”恒成立而逐帧持续发脉冲
+	auto MinGear = -1;
+	auto MaxGear = 1;
+
+	if (const AActor* Owner = GetOwner())
+	{
+		if (const USingularisTransmissionComponent* TransmissionSU =
+			Owner->FindComponentByClass<USingularisTransmissionComponent>())
+		{
+			MaxGear = FMath::Max(1, TransmissionSU->ForwardRatios.Num());
+			MinGear = -FMath::Max(1, TransmissionSU->ReverseRatios.Num());
+		}
+	}
+
+	// 仅记录目标挡位，换挡脉冲由 Update 逐帧产出：变速箱一次只接受一挡（目标挡位 ±1）
+	TargetGearInput = FMath::Clamp(Gear, MinGear, MaxGear);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const bool Value)
+{
+	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
+	Inputs.SetBool(Name, Value);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const int32 Value)
+{
+	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
+	Inputs.SetInteger(Name, Value);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const double Value)
+{
+	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
+	Inputs.SetFloat(Name, Value);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const FVector2D& Value)
+{
+	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
+	Inputs.SetVector2D(Name, Value);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const FVector& Value)
+{
+	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
+	Inputs.SetVector(Name, Value);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetLocallyControlled(const bool bInLocallyControlled)
+{
+	// 显式声明本地控制：SimulatedProxy 的输入来自服务器，无论传入何值均不标记本地
+	const AActor* Owner = GetOwner();
+	const bool bCanBeLocal = Owner && Owner->GetLocalRole() != ROLE_SimulatedProxy;
+	bIsLocallyControlled = bInLocallyControlled && bCanBeLocal;
+
+	// 启用网络物理预测时同步本地输入中继标记
+	if (bUsingNetworkPhysicsPrediction && NetworkPhysicsComponent)
+		NetworkPhysicsComponent->SetIsRelayingLocalInputs(bIsLocallyControlled);
 }
 
 void USingularisMorphVehicleSimulationComponent::Update(const float /*DeltaTime*/)
@@ -1698,11 +1799,17 @@ void USingularisMorphVehicleSimulationComponent::PostUpdate()
 {
 	if (!VehiclePhysicsOutput) return;
 
-	// 1) 广播本帧新建模块事件（物理线程 ActionTreeUpdates 收集的 NewlyCreatedModuleGuids）
+	// 1) 广播本帧新建模块事件（物理线程 ActionTreeUpdates 收集的 NewlyCreatedModuleGuids）。
+	//    广播后清空列表：模块新建是一次性事件，物理停摆帧（ParallelUpdate 未运行、
+	//    输出容器保持上帧残留）不得重复广播
 	for (const Chaos::FCreatedModule& AddedModule : VehiclePhysicsOutput->NewlyCreatedModuleGuids)
 		BroadcastModuleAddedEvent(AddedModule.SimType, AddedModule.Guid, AddedModule.TreeIndex);
+	VehiclePhysicsOutput->NewlyCreatedModuleGuids.Empty();
 
-	// 2) 模块布局发生增删后，为网络状态历史的全部帧重建复制结构，
+	// 2) 广播换挡/打滑/触底离散输出事件（游戏线程边沿检测，天然幂等）
+	BroadcastDiscreteOutputEvents();
+
+	// 3) 模块布局发生增删后，为网络状态历史的全部帧重建复制结构，
 	//    否则历史帧缺失/多出模块数据会导致 rewind 重模拟崩溃
 	if (bPendingReplicationStructureRebuild)
 	{
@@ -1789,180 +1896,11 @@ void USingularisMorphVehicleSimulationComponent::ShowDebugInfo(
 #endif
 }
 
-const FTransform& USingularisMorphVehicleSimulationComponent::GetComponentTransform() const
-{
-	if (const AActor* Owner = GetOwner())
-	{
-		if (const USceneComponent* RootComp = Owner->GetRootComponent())
-			return RootComp->GetComponentTransform();
-	}
-
-	return FTransform::Identity;
-}
-
 const Chaos::FSimOutputData* USingularisMorphVehicleSimulationComponent::GetOutputData(const int32 ModuleGuid) const
 {
 	return VehiclePhysicsOutput
 		       ? VehiclePhysicsOutput->GetOutputData(ModuleGuid)
 		       : nullptr;
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInputBool(
-	const FName Name,
-	const bool Value,
-	const EModuleInputBufferActionType BufferAction
-) const
-{
-	if (InputProducer)
-		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInputInteger(
-	const FName Name,
-	const int32 Value,
-	const EModuleInputBufferActionType BufferAction
-) const
-{
-	if (InputProducer)
-		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInputAxis1D(
-	const FName Name,
-	const double Value,
-	const EModuleInputBufferActionType BufferAction
-) const
-{
-	if (InputProducer)
-		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInputAxis2D(
-	const FName Name,
-	const FVector2D Value,
-	const EModuleInputBufferActionType BufferAction
-) const
-{
-	if (InputProducer)
-		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInputAxis3D(
-	const FName Name,
-	const FVector Value,
-	const EModuleInputBufferActionType BufferAction
-) const
-{
-	if (InputProducer)
-		InputProducer->BufferInput(InputNameMap, Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
-{
-	// 请求的挡位先按变速箱的实际挡数钳制：变速箱会把目标挡位夹到
-	// [-倒挡数, 前进挡数]，越界请求会让“当前挡位 ≠ 目标挡位”恒成立而逐帧持续发脉冲
-	auto MinGear = -1;
-	auto MaxGear = 1;
-
-	if (const AActor* Owner = GetOwner())
-	{
-		if (const USingularisTransmissionComponent* TransmissionSU =
-			Owner->FindComponentByClass<USingularisTransmissionComponent>())
-		{
-			MaxGear = FMath::Max(1, TransmissionSU->ForwardRatios.Num());
-			MinGear = -FMath::Max(1, TransmissionSU->ReverseRatios.Num());
-		}
-	}
-
-	// 仅记录目标挡位，换挡脉冲由 Update 逐帧产出：变速箱一次只接受一挡（目标挡位 ±1）
-	TargetGearInput = FMath::Clamp(Gear, MinGear, MaxGear);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInput(
-	const FName& Name,
-	const bool Value,
-	const EModuleInputBufferActionType BufferAction
-)
-{
-	SetInputBool(Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInput(
-	const FName& Name,
-	const int32 Value,
-	const EModuleInputBufferActionType BufferAction
-)
-{
-	SetInputInteger(Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInput(
-	const FName& Name,
-	const double Value,
-	const EModuleInputBufferActionType BufferAction
-)
-{
-	SetInputAxis1D(Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInput(
-	const FName& Name,
-	const FVector2D& Value,
-	const EModuleInputBufferActionType BufferAction
-)
-{
-	SetInputAxis2D(Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetInput(
-	const FName& Name,
-	const FVector& Value,
-	const EModuleInputBufferActionType BufferAction
-)
-{
-	SetInputAxis3D(Name, Value, BufferAction);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const bool Value)
-{
-	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
-	Inputs.SetBool(Name, Value);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const int32 Value)
-{
-	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
-	Inputs.SetInteger(Name, Value);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const double Value)
-{
-	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
-	Inputs.SetFloat(Name, Value);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const FVector2D& Value)
-{
-	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
-	Inputs.SetVector2D(Name, Value);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const FVector& Value)
-{
-	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
-	Inputs.SetVector(Name, Value);
-}
-
-void USingularisMorphVehicleSimulationComponent::SetLocallyControlled(const bool bInLocallyControlled)
-{
-	// 显式声明本地控制：SimulatedProxy 的输入来自服务器，无论传入何值均不标记本地
-	const AActor* Owner = GetOwner();
-	const bool bCanBeLocal = Owner && Owner->GetLocalRole() != ROLE_SimulatedProxy;
-	bIsLocallyControlled = bInLocallyControlled && bCanBeLocal;
-
-	// 启用网络物理预测时同步本地输入中继标记
-	if (bUsingNetworkPhysicsPrediction && NetworkPhysicsComponent)
-		NetworkPhysicsComponent->SetIsRelayingLocalInputs(bIsLocallyControlled);
 }
 
 bool USingularisMorphVehicleSimulationComponent::IsLocallyControlled() const
@@ -2000,6 +1938,40 @@ bool USingularisMorphVehicleSimulationComponent::IsLocallyControlled() const
 	return false;
 }
 
+float USingularisMorphVehicleSimulationComponent::GetEngineMaxRPM() const
+{
+	// 1) 遍历参与仿真的 SU 组件映射，按模块类型聚合引擎与电机的最大转速。
+	//    手动注册路径（无 SU 映射）取不到来源，返回 0 由调用方自行回退
+	auto EngineMaxRPM = 0.0f;
+	auto MotorMaxRPM = 0.0f;
+
+	for (const auto& Pair : ComponentToPhysicsObjects)
+	{
+		const USingularisMorphVehicleBaseComponent* SUComp = Cast<USingularisMorphVehicleBaseComponent>(
+			Pair.Key.Get()
+		);
+		if (!SUComp) continue;
+
+		switch (SUComp->GetModuleType())
+		{
+		case ESingularisMorphVehicleModuleType::Engine:
+			if (const USingularisEngineComponent* EngineSU = Cast<USingularisEngineComponent>(SUComp))
+				EngineMaxRPM = FMath::Max(EngineMaxRPM, static_cast<float>(EngineSU->MaxRPM));
+			break;
+
+		case ESingularisMorphVehicleModuleType::Motor:
+			if (const USingularisMotorComponent* MotorSU = Cast<USingularisMotorComponent>(SUComp))
+				MotorMaxRPM = FMath::Max(MotorMaxRPM, MotorSU->MaxRPM);
+			break;
+
+		default: break;
+		}
+	}
+
+	// 2) 引擎占据原动机槽，无引擎时电机顶替（与建树的原动机槽策略一致），引擎优先返回
+	return EngineMaxRPM > 0.0f ? EngineMaxRPM : MotorMaxRPM;
+}
+
 float USingularisMorphVehicleSimulationComponent::GetVehicleSpeed() const
 {
 	const AActor* Owner = GetOwner();
@@ -2007,6 +1979,38 @@ float USingularisMorphVehicleSimulationComponent::GetVehicleSpeed() const
 
 	// cm/s → km/h
 	return FMath::Abs(Owner->GetVelocity().Size() * 0.036f);
+}
+
+void USingularisMorphVehicleSimulationComponent::OnSimulationModuleInitialized(
+	const FName& ModuleType,
+	const int32 Guid,
+	const int32 TreeIndex
+)
+{
+	// 分发生命周期到 SU 组件（广播由 BroadcastModuleAddedEvent 统一执行）
+	if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(Guid))
+	{
+		if (auto* SUInterface = Cast<ISingularisMorphVehicleSUInterface>(Component->Get()))
+		{
+			// TreeIndex 来自物理线程应用树更新后的真实索引
+			SUInterface->SetTreeIndex(TreeIndex);
+			SUInterface->OnAdded();
+		}
+	}
+}
+
+void USingularisMorphVehicleSimulationComponent::OnSimulationModuleRemovedCallback(
+	const FName& ModuleType,
+	const int32 Guid,
+	const int32 TreeIndex
+)
+{
+	// 分发生命周期到 SU 组件（广播由 BroadcastModuleRemovedEvent 统一执行）
+	if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(Guid))
+	{
+		if (auto* SUInterface = Cast<ISingularisMorphVehicleSUInterface>(Component->Get()))
+			SUInterface->OnRemoved();
+	}
 }
 
 void USingularisMorphVehicleSimulationComponent::CreateVehicleSimulation()
@@ -2088,6 +2092,8 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 	GuidToCoreModule.Empty();
 	ComponentToPhysicsObjects.Empty();
 	PhysicsGuidToComponent.Empty();
+	SlippingWheelGuids.Empty();
+	BottomedOutSuspensionGuids.Empty();
 	{
 		FScopeLock AnimationLock(&ModuleAnimationSetupsLock);
 		ModuleAnimationSetups.Empty();
@@ -2446,6 +2452,121 @@ void USingularisMorphVehicleSimulationComponent::BroadcastModuleRemovedEvent(
 	OnSimulationModuleRemovedEvent.Broadcast(ModuleType, Guid, TreeIndex);
 }
 
+void USingularisMorphVehicleSimulationComponent::BroadcastDiscreteOutputEvents()
+{
+	// 1) 换挡事件：挡位缓存咬合非空挡位且与上次事件挡位不同时广播。
+	//    a) 空挡（0）为换挡过渡态，不构成换挡事件
+	//    b) 首次收到挡位输出只建立基准不广播，避免变速箱初始挡位被误判为换挡
+	//    c) 挡位缓存在本帧 ParallelUpdate 更新，边沿检测天然幂等，物理停摆帧不重复广播
+	if (bHasGearData && CurrentGear != 0)
+	{
+		if (bHasGearShiftBaseline && LastEngagedGear != CurrentGear)
+			OnGearShiftedEvent.Broadcast(LastEngagedGear, CurrentGear);
+
+		LastEngagedGear = CurrentGear;
+		bHasGearShiftBaseline = true;
+	}
+
+	// 2) 车轮打滑与悬挂触底：按模块输出做状态边沿检测
+	if (!VehiclePhysicsOutput) return;
+
+	for (Chaos::FSimOutputData* Output : VehiclePhysicsOutput->SimTreeOutputData)
+	{
+		if (!Output) continue;
+
+		if (Output->IsSimType<Chaos::FWheelSimModule>())
+			ProcessWheelSlipState(*static_cast<const Chaos::FWheelOutputData*>(Output));
+		else if (Output->IsSimType<FSingularisMorphVehicleSuspensionSimModule>())
+			ProcessSuspensionBottomOutState(*static_cast<const FSingularisMorphSuspensionOutputData*>(Output));
+	}
+}
+
+void USingularisMorphVehicleSimulationComponent::ProcessWheelSlipState(const Chaos::FWheelOutputData& OutputData)
+{
+	const int32 Guid = OutputData.ModuleGuid;
+
+	// 1) 双阈值滞回：未打滑时按起始阈值进入，打滑中按较低的解除阈值退出，
+	//    避免侧滑角在单一阈值附近抖动导致事件反复翻转；
+	//    解除阈值配置高于起始阈值时按起始阈值执行，防止打滑状态永久滞留。
+	//    腾空车轮不判打滑（侧滑角失去物理意义）
+	const float StartThreshold = FMath::Max(FMath::DegreesToRadians(SlipStartAngleThreshold), 0.0f);
+	const float StopThreshold = FMath::Min(FMath::DegreesToRadians(SlipStopAngleThreshold), StartThreshold);
+
+	const float AbsSlipAngle = FMath::Abs(OutputData.SlipAngle);
+	const bool bWasSlipping = SlippingWheelGuids.Contains(Guid);
+	const bool bIsSlipping = OutputData.bTouchingGround
+		&& AbsSlipAngle >= (bWasSlipping ? StopThreshold : StartThreshold);
+
+	// 2) 状态翻转时更新记录并广播对应事件；无翻转时静默返回
+	if (bIsSlipping == bWasSlipping) return;
+
+	if (bIsSlipping)
+	{
+		SlippingWheelGuids.Add(Guid);
+		OnWheelSlipStartedEvent.Broadcast(Guid);
+	}
+	else
+	{
+		SlippingWheelGuids.Remove(Guid);
+		OnWheelSlipStoppedEvent.Broadcast(Guid);
+	}
+}
+
+void USingularisMorphVehicleSimulationComponent::ProcessSuspensionBottomOutState(
+	const FSingularisMorphSuspensionOutputData& OutputData
+)
+{
+	const int32 Guid = OutputData.ModuleGuid;
+
+	// 1) 触底判定：弹簧压缩量达到最大压缩行程（MaxRaise）减去判定容差。
+	//    压缩量以完全伸展为 0、MaxRaise + MaxDrop 为上限，腾空无命中时退回 0 不会误判；
+	//    MaxRaise 非正（未配置行程）或不超过容差时不判定
+	const float Tolerance = FMath::Max(SuspensionBottomOutTolerance, 0.0f);
+	const bool bIsBottomedOut = OutputData.bWheelHit
+		&& OutputData.MaxRaise > Tolerance
+		&& OutputData.SpringDisplacement >= OutputData.MaxRaise - Tolerance;
+
+	// 2) 触底为一次性冲击事件：仅上升沿广播，脱离触底只复位记录不产生配对事件
+	if (!bIsBottomedOut)
+	{
+		BottomedOutSuspensionGuids.Remove(Guid);
+		return;
+	}
+
+	if (BottomedOutSuspensionGuids.Contains(Guid)) return;
+
+	BottomedOutSuspensionGuids.Add(Guid);
+	OnSuspensionBottomedOutEvent.Broadcast(Guid);
+}
+
+void USingularisMorphVehicleSimulationComponent::CacheRootPhysicsObject(
+	IPhysicsProxyBase* Proxy
+)
+{
+	Chaos::EnsureIsInGameThreadContext();
+	using namespace Chaos;
+	RootPhysicsObject = nullptr;
+
+	if (!Proxy) return;
+
+	switch (Proxy->GetType())
+	{
+	case EPhysicsProxyType::ClusterUnionProxy:
+		if (auto* CUProxy = static_cast<FClusterUnionPhysicsProxy*>(Proxy))
+			RootPhysicsObject = CUProxy->GetPhysicsObjectHandle();
+		break;
+
+	case EPhysicsProxyType::SingleParticleProxy:
+		if (auto* ParticleProxy = static_cast<FSingleParticlePhysicsProxy*>(Proxy))
+			RootPhysicsObject = ParticleProxy->GetPhysicsObject();
+		break;
+
+	default: break;
+	}
+
+	CachedPhysicsProxy = Proxy;
+}
+
 int32 USingularisMorphVehicleSimulationComponent::AddModuleToTree(
 	Chaos::ISimulationModuleBase* CoreModule,
 	const FTransform& ComponentTransform,
@@ -2681,36 +2802,4 @@ void USingularisMorphVehicleSimulationComponent::RestoreAllWheelCollisionSuppres
 	}
 
 	SuppressedWheelCollisions.Empty();
-}
-
-void USingularisMorphVehicleSimulationComponent::OnSimulationModuleInitialized(
-	const FName& ModuleType,
-	const int32 Guid,
-	const int32 TreeIndex
-)
-{
-	// 分发生命周期到 SU 组件（广播由 BroadcastModuleAddedEvent 统一执行）
-	if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(Guid))
-	{
-		if (auto* SUInterface = Cast<ISingularisMorphVehicleSUInterface>(Component->Get()))
-		{
-			// TreeIndex 来自物理线程应用树更新后的真实索引
-			SUInterface->SetTreeIndex(TreeIndex);
-			SUInterface->OnAdded();
-		}
-	}
-}
-
-void USingularisMorphVehicleSimulationComponent::OnSimulationModuleRemovedCallback(
-	const FName& ModuleType,
-	const int32 Guid,
-	const int32 TreeIndex
-)
-{
-	// 分发生命周期到 SU 组件（广播由 BroadcastModuleRemovedEvent 统一执行）
-	if (const TWeakObjectPtr<UActorComponent>* Component = PhysicsGuidToComponent.Find(Guid))
-	{
-		if (auto* SUInterface = Cast<ISingularisMorphVehicleSUInterface>(Component->Get()))
-			SUInterface->OnRemoved();
-	}
 }

@@ -16,6 +16,7 @@ namespace Chaos
 {
 	struct FSimOutputData;
 	struct FCreatedModules;
+	struct FWheelOutputData;
 	class FSimModuleTree;
 	class FSimTreeUpdates;
 	class ISimulationModuleBase;
@@ -26,6 +27,7 @@ struct FSingularisMorphVehicleAsyncOutput;
 struct FSingularisMorphVehiclePhysicsOutput;
 struct FSingularisMorphChaosSimModuleManagerAsyncInput;
 struct FSingularisMorphChaosSimModuleManagerAsyncOutput;
+struct FSingularisMorphSuspensionOutputData;
 class UNetworkPhysicsComponent;
 class UVehicleInputProducerBase;
 class FDebugDisplayInfo;
@@ -84,6 +86,36 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	TreeIndex
 );
 
+/** 换挡事件：非空挡位咬合时广播，携带换挡前后的挡位 */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FOnGearShiftedSignature,
+	int32,
+	OldGear,
+	int32,
+	NewGear
+);
+
+/** 车轮开始打滑事件：侧滑角越过起始阈值且车轮接地时广播，携带车轮模块 GUID */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnWheelSlipStartedSignature,
+	int32,
+	WheelModuleGuid
+);
+
+/** 车轮停止打滑事件：侧滑角回落到解除阈值以下或车轮离地时广播，携带车轮模块 GUID */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnWheelSlipStoppedSignature,
+	int32,
+	WheelModuleGuid
+);
+
+/** 悬挂触底事件：弹簧压缩量达到最大压缩行程时广播（仅上升沿一次），携带悬挂模块 GUID */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnSuspensionBottomedOutSignature,
+	int32,
+	SuspensionModuleGuid
+);
+
 #pragma endregion
 
 /**
@@ -92,6 +124,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
  * 挂载于变型载具 Actor/Pawn 上，作为整个模块化模拟系统的核心调度器。
  * 管理模拟模块树、异步物理回调、物理适配器、输入生产者与动力学输出，
  * 通过 FSingularisMorphVehicleSimulation 在物理线程上执行动力学计算。
+ *
+ * 输出侧数据访问采用推拉混合模型：
+ * 连续状态（转速/扭矩/车速/挡位）由观察者在 Tick 中拉取（State 区域的 Getter），
+ * 离散事件（模块增删/换挡/打滑/触底）由本组件在游戏线程边沿检测后经事件分发器推送。
  *
  * 与任何具体物理后端完全正交——不持有、不引用、不调用特定物理实现的相关逻辑。
  * 物理来源由用户在编辑器中配置的 PhysicsAdapter 实例负责桥接。
@@ -146,6 +182,7 @@ public:
 		meta = (DisplayName = "状态输入配置")
 	)
 	TArray<FModuleInputSetup> StateInputConfiguration{};
+
 	/** 组件级控制输入配置（与 SU 组件的输入配置合并去重） */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -277,9 +314,36 @@ public:
 	)
 	FCollisionResponseContainer SimulatedWheelCollisionResponses{};
 
+	/** 打滑起始侧滑角阈值（度）：车轮接地且侧滑角达到该值时广播打滑开始事件 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变型载具仿真|事件判定",
+		meta = (DisplayName = "打滑起始侧滑角(度)", ClampMin = "0.0", UIMin = "0.0")
+	)
+	float SlipStartAngleThreshold = 6.0f;
+
+	/** 打滑解除侧滑角阈值（度）：侧滑角回落到该值以下或车轮离地时广播打滑停止事件；配置高于起始阈值时按起始阈值执行 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变型载具仿真|事件判定",
+		meta = (DisplayName = "打滑解除侧滑角(度)", ClampMin = "0.0", UIMin = "0.0")
+	)
+	float SlipStopAngleThreshold = 3.0f;
+
+	/** 触底判定容差（厘米）：悬挂压缩量达到 最大上升减容差 时视为触底 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变型载具仿真|事件判定",
+		meta = (DisplayName = "触底判定容差(厘米)", ClampMin = "0.0", UIMin = "0.0")
+	)
+	float SuspensionBottomOutTolerance = 0.5f;
+
 #pragma endregion
 
-#pragma region 事件分发器
+#pragma region Event Dispatcher
 
 	/** 模拟模块添加事件（原生，低开销） */
 	FOnSimulationModuleAddedNative OnSimulationModuleAddedNativeEvent{};
@@ -303,10 +367,42 @@ public:
 	)
 	FOnSimulationModuleRemoved OnSimulationModuleRemovedEvent{};
 
+	/** 换挡事件：非空挡位咬合时广播（空挡为换挡过渡态不广播，首次挡位输出仅建立基准） */
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "引力奇点变型载具仿真|事件分发器",
+		meta = (DisplayName = "换挡")
+	)
+	FOnGearShiftedSignature OnGearShiftedEvent{};
+
+	/** 车轮开始打滑事件 */
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "引力奇点变型载具仿真|事件分发器",
+		meta = (DisplayName = "车轮开始打滑")
+	)
+	FOnWheelSlipStartedSignature OnWheelSlipStartedEvent{};
+
+	/** 车轮停止打滑事件（车轮模块被移除时同样广播，供观察者解除驻留状态） */
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "引力奇点变型载具仿真|事件分发器",
+		meta = (DisplayName = "车轮停止打滑")
+	)
+	FOnWheelSlipStoppedSignature OnWheelSlipStoppedEvent{};
+
+	/** 悬挂触底事件（一次性冲击事件，仅在触底上升沿广播） */
+	UPROPERTY(
+		BlueprintAssignable,
+		Category = "引力奇点变型载具仿真|事件分发器",
+		meta = (DisplayName = "悬挂触底")
+	)
+	FOnSuspensionBottomedOutSignature OnSuspensionBottomedOutEvent{};
+
 #pragma endregion
 
 private:
-#pragma region Internal Variable
+#pragma region State
 
 	/** 模拟模块树（游戏线程创建，物理线程接管所有权） */
 	TUniquePtr<Chaos::FSimModuleTree> SimulationModuleTree = nullptr;
@@ -328,6 +424,7 @@ private:
 	/** 模拟 GUID 到 SU 组件的反向映射（供 ParallelUpdate 回调 OnOutputReady） */
 	TMap<int32, TWeakObjectPtr<UActorComponent>> PhysicsGuidToComponent{};
 
+	/** 根物理对象句柄（装配根粒子，模块构造期初始化的锚点） */
 	Chaos::FPhysicsObjectHandle RootPhysicsObject = nullptr;
 
 	/** 模块动画配置列表 */
@@ -415,13 +512,32 @@ private:
 	/** 悬挂射线忽略的 Actor 列表 */
 	TArray<AActor*> ActorsToIgnore{};
 
-public:
-	/** 存储的树更新队列 */
-	Chaos::FSimTreeUpdates StoredTreeUpdates{};
+	/** 上一次已咬合的非空挡位（换挡事件的旧挡位来源） */
+	int32 LastEngagedGear = 0;
 
-	/** 网络物理预测开关 */
+	/** 换挡事件基准已建立：首次收到挡位输出时只记录不广播，避免初始挡位误判为换挡 */
+	bool bHasGearShiftBaseline = false;
+
+	/** 打滑中的车轮模块 GUID 集合（打滑事件边沿检测状态） */
+	TSet<int32> SlippingWheelGuids{};
+
+	/** 触底中的悬挂模块 GUID 集合（触底事件边沿检测状态） */
+	TSet<int32> BottomedOutSuspensionGuids{};
+
+public:
+	/**
+	 * 物理线程端载具模拟。
+	 *
+	 * 降级为公共可变成员的原因：异步回调在物理线程上下文直接访问该指针
+	 * （Simulate / OnContactModification / ApplyDeferredForces / 网络状态注入），
+	 * 以访问器封装会误导其跨线程所有权语义；命名保留 PT 后缀作线程警示。
+	 */
+	TUniquePtr<FSingularisMorphVehicleSimulation> VehicleSimulationPT;
+
+	/** 网络物理预测开关。降级为公共成员的原因同 VehicleSimulationPT：物理线程回调直接读取 */
 	bool bUsingNetworkPhysicsPrediction = false;
 
+private:
 	/** 当前异步数据类型 */
 	ESingularisMorphChaosAsyncVehicleDataType CurrentAsyncDataType = AsyncInvalid;
 
@@ -437,7 +553,9 @@ public:
 	/** 异步输出插值系数 [0..1] */
 	float OutputInterpolationAlpha = 0.0f;
 
-private:
+	/** 待提交到物理线程的模块树增删队列（仅游戏线程） */
+	Chaos::FSimTreeUpdates StoredTreeUpdates{};
+
 #pragma endregion
 
 public:
@@ -510,38 +628,6 @@ public:
 	/** 更新物理阻尼属性 */
 	void UpdatePhysicalProperties() const;
 
-	/** 获取模块动画配置（可修改）
-	 *
-	 * 写入动画槽位表必须持有 GetModuleAnimationSetupsLock()，否则会与动画线程的
-	 * 读取竞争（TArray 重分配期间读取会命中已释放内存）；拓扑重建请走
-	 * RebuildFromSnapshot / RegisterModuleAnimationSetup 等内部路径
-	 */
-	TArray<FSingularisMorphModuleAnimationSetup>& AccessModuleAnimationSetups()
-	{
-		return ModuleAnimationSetups;
-	}
-
-	/** 获取模块动画配置（只读）；跨线程读取前必须持有 GetModuleAnimationSetupsLock() */
-	const TArray<FSingularisMorphModuleAnimationSetup>& GetModuleAnimationSetups() const
-	{
-		return ModuleAnimationSetups;
-	}
-
-	/** 获取动画槽位表的访问锁（动画线程与游戏线程共享该表） */
-	FCriticalSection& GetModuleAnimationSetupsLock() const { return ModuleAnimationSetupsLock; }
-
-	/** 获取仿真树处理顺序 */
-	ESimTreeProcessingOrder GetSimulationTreeProcessingOrder() const { return SimulationTreeProcessingOrder; }
-
-	/** 获取仿真树处理顺序（旧名称，兼容已有代码） */
-	ESimTreeProcessingOrder GetTreeProcessingOrder() const { return SimulationTreeProcessingOrder; }
-
-	/** 物理线程端载具模拟（保留旧名称以兼容异步回调） */
-	TUniquePtr<FSingularisMorphVehicleSimulation> VehicleSimulationPT;
-
-	/** 缓存根物理对象 */
-	void CacheRootPhysicsObject(IPhysicsProxyBase* Proxy);
-
 	/** 设置输入生产者类并重建输入配置 */
 	void SetInputProducerClass(
 		TSubclassOf<UVehicleInputProducerBase> InInputProducerClass,
@@ -559,79 +645,8 @@ public:
 	/** 添加悬挂射线忽略的 Actor */
 	void AddActorsToIgnore(TArray<AActor*>& ActorsIn);
 
-	/** 移除悬挂射线忽略的 Actor */
+	/** 移除悬挂射线忽略的 Actor（Owner 自忽略始终保留） */
 	void RemoveActorsToIgnore(TArray<AActor*>& ActorsIn);
-
-#pragma endregion
-
-#pragma region SPI
-
-	/** 游戏线程更新入口 */
-	void Update(float DeltaTime);
-
-	/** 游戏线程预更新（处理挂起的模块变更） */
-	void PreTickGT(float DeltaTime);
-
-	/** 设置当前异步输出数据并执行插值 */
-	void SetCurrentAsyncData(
-		FSingularisMorphChaosSimModuleManagerAsyncOutput* CurOutput,
-		FSingularisMorphChaosSimModuleManagerAsyncOutput* NextOutput,
-		float Alpha,
-		int32 Timestamp
-	);
-
-	/** 并行更新（读取异步输出数据、分发到模块组件） */
-	void ParallelUpdate(const Chaos::FCreatedModules& ModuleEvents);
-
-	/** 产生输入数据提供给物理线程 */
-	void ProduceInput(
-		int32 PhysicsStep,
-		int32 NumSteps,
-		FSingularisMorphVehicleAsyncInput* AsyncInput
-	);
-
-	/** 后更新 */
-	void PostUpdate();
-
-	/** 完成异步回调数据处理 */
-	void FinalizeSimCallbackData(FSingularisMorphChaosSimModuleManagerAsyncInput& Input);
-
-	/** 调试信息显示 */
-	void ShowDebugInfo(
-		AHUD* HUD,
-		UCanvas* Canvas,
-		const FDebugDisplayInfo& DisplayInfo,
-		float& YL,
-		float& YPos
-	);
-
-	/** 物理输出容器访问 */
-	TUniquePtr<FSingularisMorphVehiclePhysicsOutput>& GetVehiclePhysicsOutput()
-	{
-		return VehiclePhysicsOutput;
-	}
-
-	/** 模拟模块树访问 */
-	TUniquePtr<Chaos::FSimModuleTree>& AccessSimulationModuleTree()
-	{
-		return SimulationModuleTree;
-	}
-
-	/** 获取组件变换 */
-	const FTransform& GetComponentTransform() const;
-
-	/** 忽略 Actor 列表访问 */
-	TArray<AActor*>& AccessActorsToIgnore() { return ActorsToIgnore; }
-
-	/** 获取当前异步输入 */
-	const FSingularisMorphVehicleAsyncInput* GetCurrentAsyncInput() const { return CurrentAsyncInput; }
-
-	/** 按模块 GUID 获取最近的输出数据 */
-	const Chaos::FSimOutputData* GetOutputData(int32 ModuleGuid) const;
-
-#pragma endregion
-
-#pragma region 输入
 
 	/** 写入布尔控制输入 */
 	UFUNCTION(
@@ -693,7 +708,7 @@ public:
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
 	) const;
 
-	/** 设置目标挡位（手动变速箱） */
+	/** 设置目标挡位（手动变速箱），越界请求按变速箱实际挡数钳制 */
 	UFUNCTION(
 		BlueprintCallable,
 		Category = "引力奇点变型载具仿真|输入",
@@ -701,46 +716,78 @@ public:
 	)
 	void SetGearInput(int32 Gear);
 
-	/** C++ 重载：写入控制输入 */
-	void SetInput(
-		const FName& Name,
-		const bool Value,
-		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
-	void SetInput(
-		const FName& Name,
-		const int32 Value,
-		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
-	void SetInput(
-		const FName& Name,
-		const double Value,
-		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
-	void SetInput(
-		const FName& Name,
-		const FVector2D& Value,
-		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
-	void SetInput(
-		const FName& Name,
-		const FVector& Value,
-		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
-	);
-
-	/** C++ 重载：写入状态输入 */
+	/** 写入布尔状态输入 */
 	void SetState(const FName& Name, const bool Value);
+
+	/** 写入整数状态输入 */
 	void SetState(const FName& Name, const int32 Value);
+
+	/** 写入浮点状态输入 */
 	void SetState(const FName& Name, const double Value);
+
+	/** 写入二维向量状态输入 */
 	void SetState(const FName& Name, const FVector2D& Value);
+
+	/** 写入三维向量状态输入 */
 	void SetState(const FName& Name, const FVector& Value);
 
-	/** 设置本地控制状态（网络预测） */
+	/** 声明本地控制状态（网络预测；SimulatedProxy 的输入来自服务器，无论传入何值均不标记本地） */
 	void SetLocallyControlled(bool bInLocallyControlled);
 
 #pragma endregion
 
-#pragma region State
+#pragma region SPI
+
+	/** 游戏线程更新入口 */
+	void Update(float DeltaTime);
+
+	/** 游戏线程预更新（处理挂起的模块变更） */
+	void PreTickGT(float DeltaTime);
+
+	/** 设置当前异步输出数据并执行插值 */
+	void SetCurrentAsyncData(
+		FSingularisMorphChaosSimModuleManagerAsyncOutput* CurOutput,
+		FSingularisMorphChaosSimModuleManagerAsyncOutput* NextOutput,
+		float Alpha,
+		int32 Timestamp
+	);
+
+	/** 并行更新（读取异步输出数据、分发到模块组件） */
+	void ParallelUpdate(const Chaos::FCreatedModules& ModuleEvents);
+
+	/** 产生输入数据提供给物理线程 */
+	void ProduceInput(
+		int32 PhysicsStep,
+		int32 NumSteps,
+		FSingularisMorphVehicleAsyncInput* AsyncInput
+	);
+
+	/** 后更新（广播离散事件、重建网络复制结构） */
+	void PostUpdate();
+
+	/** 完成异步回调数据处理 */
+	void FinalizeSimCallbackData(FSingularisMorphChaosSimModuleManagerAsyncInput& Input);
+
+	/** 调试信息显示 */
+	void ShowDebugInfo(
+		AHUD* HUD,
+		UCanvas* Canvas,
+		const FDebugDisplayInfo& DisplayInfo,
+		float& YL,
+		float& YPos
+	);
+
+	/** 获取模块动画配置（只读）；跨线程读取前必须持有 GetModuleAnimationSetupsLock() */
+	const TArray<FSingularisMorphModuleAnimationSetup>& GetModuleAnimationSetups() const
+	{
+		return ModuleAnimationSetups;
+	}
+
+	/** 获取动画槽位表的访问锁（动画线程与游戏线程共享该表） */
+	FCriticalSection& GetModuleAnimationSetupsLock() const { return ModuleAnimationSetupsLock; }
+
+	/** 按模块 GUID 获取最近的输出数据 */
+	const Chaos::FSimOutputData* GetOutputData(int32 ModuleGuid) const;
 
 	/** 获取当前物理适配器（可能为 nullptr = 手动模式） */
 	UFUNCTION(
@@ -790,6 +837,20 @@ public:
 	)
 	float GetEngineTorque() const { return EngineTorque; }
 
+	/**
+	 * 获取引擎最大转速（RPM）。
+	 *
+	 * 从参与仿真的引擎/电机 SU 组件聚合：引擎占据原动机槽时返回引擎最大值，
+	 * 无引擎时返回电机最大值；手动注册路径（无 SU 映射）与无原动机时返回 0，
+	 * 调用方需按 0 自行回退。每次调用实时解析，模块增删后取值自动更新。
+	 */
+	UFUNCTION(
+		BlueprintPure,
+		Category = "引力奇点变型载具仿真|State",
+		meta = (DisplayName = "获取引擎最大转速")
+	)
+	float GetEngineMaxRPM() const;
+
 	/** 获取车速（公里/小时） */
 	UFUNCTION(
 		BlueprintPure,
@@ -798,38 +859,68 @@ public:
 	)
 	float GetVehicleSpeed() const;
 
-	/** 获取输入生产者实例 */
-	UVehicleInputProducerBase* GetInputProducer() const { return InputProducer; }
-
 #pragma endregion
 
 private:
+#pragma region Callback
+
+	/** 模块初始化回调：分发生命周期到 SU 组件（广播由 BroadcastModuleAddedEvent 统一执行） */
+	void OnSimulationModuleInitialized(const FName& ModuleType, int32 Guid, int32 TreeIndex);
+
+	/** 模块移除回调：分发生命周期到 SU 组件（广播由 BroadcastModuleRemovedEvent 统一执行） */
+	void OnSimulationModuleRemovedCallback(const FName& ModuleType, int32 Guid, int32 TreeIndex);
+
+#pragma endregion
+
 #pragma region Internal Function
 
+	/** 创建物理线程端载具模拟并注册到仿真管理器（仅游戏世界生效） */
 	void CreateVehicleSimulation();
+
+	/** 销毁物理线程端模拟：注销管理器、终止模块、释放资源（销毁推迟到求解器命令队列） */
 	void DestroyVehicleSimulation();
 
 	/** 清除全部模拟模块（载具解体/销毁时释放资源并提交删除） */
 	void ClearAllSimulationModules();
+
+	/** 解析物理代理：适配器优先，其次缓存值，最后回退 Owner 根组件物理体 */
 	IPhysicsProxyBase* GetPhysicsProxy() const;
+
+	/** 生成全局唯一且不复用的模块 GUID */
 	int32 GenerateNewGuid();
 
-	/** 聚合所有 SU 组件的输入配置（去重） */
+	/** 聚合所有 SU 组件的输入配置（去重，换挡脉冲置为消费即清零） */
 	void AssimilateComponentInputs(TArray<FModuleInputSetup>& OutCombinedInputs) const;
 
-	/** 初始化输入生产者与输入容器（配置变更时幂等重建） */
+	/** 初始化输入生产者与输入容器（配置变更时幂等重建并迁移已缓冲输入值） */
 	void SetupInputConfiguration(bool bForceReinitialize = false);
 
 	/** 将动画数据应用到非骨骼可视化组件 */
 	void UpdateNonSkeletalAnimations();
 
+	/** 在输出容器中按 GUID 查找模块输出数据（支持异步输出与游戏线程插值副本） */
 	Chaos::FSimOutputData* FindModuleOutputFromGuid(
 		const FSingularisMorphVehiclePhysicsOutput& OutputContainer,
 		int32 Guid
 	) const;
 
+	/** 广播模块添加事件（原生与 Blueprint 双轨） */
 	void BroadcastModuleAddedEvent(const FName& ModuleType, int32 Guid, int32 TreeIndex) const;
+
+	/** 广播模块移除事件（原生与 Blueprint 双轨） */
 	void BroadcastModuleRemovedEvent(const FName& ModuleType, int32 Guid, int32 TreeIndex) const;
+
+	/** 广播换挡/打滑/触底离散输出事件（游戏线程边沿检测，天然幂等） */
+	void BroadcastDiscreteOutputEvents();
+
+	/** 车轮打滑状态边沿检测：双阈值滞回 + 接地门控，状态翻转时广播开始/停止事件 */
+	void ProcessWheelSlipState(const Chaos::FWheelOutputData& OutputData);
+
+	/** 悬挂触底状态边沿检测：压缩量达最大行程减容差时广播一次性触底事件 */
+	void ProcessSuspensionBottomOutState(const FSingularisMorphSuspensionOutputData& OutputData);
+
+	/** 缓存根物理对象（按代理类型解析集群联合或单粒子句柄） */
+	void CacheRootPhysicsObject(IPhysicsProxyBase* Proxy);
 
 	/**
 	 * 内部模块注册（Internal API）。
@@ -913,13 +1004,6 @@ private:
 
 	/** 恢复全部被抑制的车轮组件（载具解体、物理状态拆除时调用） */
 	void RestoreAllWheelCollisionSuppression();
-
-#pragma endregion
-
-#pragma region Callback
-
-	void OnSimulationModuleInitialized(const FName& ModuleType, int32 Guid, int32 TreeIndex);
-	void OnSimulationModuleRemovedCallback(const FName& ModuleType, int32 Guid, int32 TreeIndex);
 
 #pragma endregion
 };
