@@ -40,7 +40,7 @@ class USingularisMorphVehicleSimulationComponent;
 UCLASS(
 	Blueprintable,
 	BlueprintType,
-	ClassGroup = ("Singularis"),
+	ClassGroup = ("SingularisMorphVehicle"),
 	meta = (BlueprintSpawnableComponent, DisplayName = "引力奇点变形载具声音组件")
 )
 class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleSoundComponent : public UActorComponent
