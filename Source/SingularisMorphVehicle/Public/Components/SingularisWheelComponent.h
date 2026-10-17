@@ -66,7 +66,12 @@ public:
 	)
 	float WheelInertia = 10.0f;
 
-	/** 最大旋转角速度（弧度/秒） */
+	/**
+	 * 最大旋转角速度（弧度/秒）
+	 *
+	 * 车轮自身的安全上限；若低于引擎最高转速经最高挡传动链折算的轮速，
+	 * 建树时会自动提升到该轮速，避免车轮限速先于引擎限速生效。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -229,11 +234,17 @@ private:
 	 */
 	float CachedSteeringAngleDegrees = 0.0f;
 
+	/** 动力链允许的最高轮速（弧度/秒），0 表示未提供；建树期由 SimulationComponent 写入 */
+	float EffectiveMaxRotationVel = 0.0f;
+
 #pragma endregion
 
 public:
 	/** 获取最近一次输出的实际转向角（度） */
 	float GetCachedSteeringAngleDegrees() const { return CachedSteeringAngleDegrees; }
+
+	/** 设置建树期有效轮速上限（动力链最高转速折算值） */
+	void SetEffectiveMaxRotationVel(const float InValue) { EffectiveMaxRotationVel = FMath::Max(InValue, 0.0f); }
 
 #pragma region Constructors
 

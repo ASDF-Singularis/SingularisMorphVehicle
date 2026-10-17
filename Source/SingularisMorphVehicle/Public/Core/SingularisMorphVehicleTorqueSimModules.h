@@ -3,6 +3,7 @@
 #include <CoreMinimal.h>
 
 #include "SimModule/AxleModule.h"
+#include "SimModule/EngineModule.h"
 #include "SimModule/MotorModule.h"
 
 /**
@@ -17,6 +18,8 @@
  * 不引入新的模拟类型名：GetSimType() 与 IsSimType<FAxleSimModule>() 仍与上游一致，故
  * FTorqueSimModule::TransmitTorque 中按 GetSimType() 相等跳过同类子节点的判定与模块
  * 工厂注册均不受影响。
+ *
+ * 另含引擎转速限制器模块（见 FSingularisMorphEngineSimModule）。
  */
 
 /**
@@ -47,6 +50,31 @@ public:
 	{
 		TransmitTorque(VehicleModuleSystem, DriveTorque, 0.0f);
 	}
+};
+
+/**
+ * 引力奇点变型引擎模拟模块。
+ *
+ * 在官方引擎模块之上补齐转速限制器（Rev Limiter）：官方模块只把自身角速度
+ * 钳制到 MaxRPM，并未把传动系转速约束在该上限内。载具滑行、下坡或传动比
+ * 配置较高时，车轮角速度可以继续上升，引擎转速被钳制而车速不受限制。
+ *
+ * 本模块在引擎步末尾检查子节点（离合/变速箱侧）的真实角速度：
+ * 超过 MaxRPM 对应角速度时按超速比例向全部扭矩子节点下推负扭矩，
+ * 经齿比放大后成为车轮制动力。比例控制避免在上限附近硬通断造成抖动，
+ * 同时超速越多制动越强，稳定后的超速量被限制在很小范围内。
+ */
+class SINGULARISMORPHVEHICLE_API FSingularisMorphEngineSimModule : public Chaos::FEngineSimModule
+{
+public:
+	explicit FSingularisMorphEngineSimModule(const Chaos::FEngineSettings& Settings)
+		: FEngineSimModule(Settings) {}
+
+	virtual void Simulate(
+		float DeltaTime,
+		const Chaos::FAllInputs& Inputs,
+		Chaos::FSimModuleTree& VehicleModuleSystem
+	) override;
 };
 
 /** 引力奇点变型电机模拟模块。 */

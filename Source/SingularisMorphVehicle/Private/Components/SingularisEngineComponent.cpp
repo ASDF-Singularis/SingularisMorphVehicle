@@ -3,6 +3,8 @@
 #include <VehicleUtility.h>
 #include <SimModule/SimModulesInclude.h>
 
+#include "Core/SingularisMorphVehicleTorqueSimModules.h"
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisEngineComponent)
 
 USingularisEngineComponent::USingularisEngineComponent()
@@ -49,8 +51,8 @@ Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() 
 	//    外部曲线资产优先：RuntimeFloatCurve 在配置了 ExternalCurve 时以资产为准，
 	//    内部曲线可能为空，读取内部曲线会静默退回默认特性
 	const FRichCurve* TorqueRichCurve = TorqueCurve.ExternalCurve
-		                                   ? &TorqueCurve.ExternalCurve->FloatCurve
-		                                   : TorqueCurve.GetRichCurveConst();
+		                                    ? &TorqueCurve.ExternalCurve->FloatCurve
+		                                    : TorqueCurve.GetRichCurveConst();
 	if (TorqueRichCurve && !TorqueRichCurve->IsEmpty())
 	{
 		Settings.TorqueCurve.Empty();
@@ -72,8 +74,8 @@ Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() 
 	Settings.EngineBrakeEffect = Chaos::TorqueMToCm(FMath::Max(EngineBrakeEffect, 0.0f));
 	Settings.EngineInertia = Chaos::M2ToCm2(FMath::Max(EngineInertia, KINDA_SMALL_NUMBER));
 
-	// 3) 创建引擎仿真模块
-	Chaos::ISimulationModuleBase* Engine = new Chaos::FEngineSimModule(Settings);
+	// 3) 创建引擎仿真模块（带传动系转速限制器）
+	Chaos::ISimulationModuleBase* Engine = new FSingularisMorphEngineSimModule(Settings);
 
 	return Engine;
 }

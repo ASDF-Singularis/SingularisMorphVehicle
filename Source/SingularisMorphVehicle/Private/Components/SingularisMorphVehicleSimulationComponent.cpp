@@ -1,5 +1,6 @@
 ﻿#include "Components/SingularisMorphVehicleSimulationComponent.h"
 
+#include <VehicleUtility.h>
 #include <atomic>
 #include <initializer_list>
 #include <Components/PrimitiveComponent.h>
@@ -23,6 +24,7 @@
 #include "Components/SingularisMotorComponent.h"
 #include "Components/SingularisTransmissionComponent.h"
 #include "Components/SingularisUprightComponent.h"
+#include "Components/SingularisWheelComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "Core/SingularisMorphVehicleSuspensionSimModule.h"
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
@@ -636,6 +638,65 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			NumTransmission,
 			NumAxle
 		);
+	}
+
+	// 7b) 车轮有效转速上限：车轮自带的 MaxRotationVel 是机械安全上限，若它低于
+	//     引擎最高转速经最高挡（最小传动比）折算的轮速，车轮会先于引擎到达限速，
+	//     引擎转速停在低于 MaxRPM 的位置，转速限制器永远无法介入，而轮胎仍按扭矩
+	//     继续驱动车辆。此处把有效上限提升到动力链可达轮速，让引擎转速限制器成为
+	//     最终约束；无传动链/无原动机时保持车轮配置值。
+	{
+		// 先清除上一次重建写入的有效上限，动力链缺失时回退到车轮自身配置
+		for (USingularisMorphVehicleBaseComponent* WheelSU : Wheels)
+		{
+			if (auto* Wheel = Cast<USingularisWheelComponent>(WheelSU))
+				Wheel->SetEffectiveMaxRotationVel(0.0f);
+		}
+
+		auto DrivelineMaxOmega = 0.0f;
+		if (const auto* EngineSU = Cast<USingularisEngineComponent>(PrimeMoverSU))
+		{
+			DrivelineMaxOmega = Chaos::RPMToOmega(
+				FMath::Clamp(EngineSU->MaxRPM, 1, static_cast<int32>(MAX_uint16))
+			);
+		}
+		else if (const auto* MotorSU = Cast<USingularisMotorComponent>(PrimeMoverSU))
+			DrivelineMaxOmega = Chaos::RPMToOmega(FMath::Max(MotorSU->MaxRPM, 0.0f));
+
+		auto TopGearRatio = 0.0f;
+		if (const auto* Transmission = Cast<USingularisTransmissionComponent>(TransmissionSU))
+		{
+			auto MinGearRatio = TNumericLimits<float>::Max();
+			for (const float Ratio : Transmission->ForwardRatios)
+			{
+				if (FMath::Abs(Ratio) > KINDA_SMALL_NUMBER)
+					MinGearRatio = FMath::Min(MinGearRatio, FMath::Abs(Ratio));
+			}
+			for (const float Ratio : Transmission->ReverseRatios)
+			{
+				if (FMath::Abs(Ratio) > KINDA_SMALL_NUMBER)
+					MinGearRatio = FMath::Min(MinGearRatio, FMath::Abs(Ratio));
+			}
+
+			if (MinGearRatio < TNumericLimits<float>::Max())
+				TopGearRatio = MinGearRatio * FMath::Abs(Transmission->FinalDriveRatio);
+		}
+		else
+		{
+			// 无变速箱：原动机与车轮直连
+			TopGearRatio = 1.0f;
+		}
+
+		if (DrivelineMaxOmega > 0.0f && TopGearRatio > KINDA_SMALL_NUMBER)
+		{
+			// 10% 余量：确保引擎能进入限速区间，由转速限制器而非车轮上限截止
+			const float MaxWheelOmega = DrivelineMaxOmega / TopGearRatio * 1.1f;
+			for (USingularisMorphVehicleBaseComponent* WheelSU : Wheels)
+			{
+				if (auto* Wheel = Cast<USingularisWheelComponent>(WheelSU))
+					Wheel->SetEffectiveMaxRotationVel(MaxWheelOmega);
+			}
+		}
 	}
 
 	// 8) 轮位槽邻近匹配：轮胎 ↔ 立轴一对一配对。

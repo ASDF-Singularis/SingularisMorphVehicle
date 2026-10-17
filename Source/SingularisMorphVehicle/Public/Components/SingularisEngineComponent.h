@@ -43,7 +43,12 @@ public:
 	)
 	float MaxTorque = 200.0f;
 
-	/** 最大转速（RPM，上限受引擎设置的 uint16 存储限制） */
+	/**
+	 * 最大转速（RPM，上限受引擎设置的 uint16 存储限制）
+	 *
+	 * 既是引擎自身角速度上限，也是传动系经齿比映射后的转速上限：
+	 * 传动系超速时引擎断油并按超速量施加反拖制动。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
