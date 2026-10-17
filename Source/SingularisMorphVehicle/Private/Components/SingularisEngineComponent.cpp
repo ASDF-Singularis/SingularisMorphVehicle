@@ -30,10 +30,12 @@ Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() 
 	// 0) 核心结构以 uint16 存储转速，超出即静默截断，故在此钳制
 	const int32 ClampedMaxRPM = FMath::Clamp(MaxRPM, 1, static_cast<int32>(MAX_uint16));
 
-	// 1) 配置引擎设置
+	// 1) 配置引擎设置。扭矩与惯性必须处于同一单位制：ChaosVehicles 的角速度积分以
+	//    kg·cm² 为转动惯量单位，扭矩则经 TorqueMToCm 由 N·m 换算为 kg·cm²/s²。
+	//    若惯性仍按 kg·m² 原值传入，角加速度会被放大 10^4 倍，单步即可把转速顶到上限
 	Chaos::FEngineSettings Settings;
 
-	Settings.MaxTorque = Chaos::TorqueMToCm(MaxTorque);
+	Settings.MaxTorque = Chaos::TorqueMToCm(FMath::Max(MaxTorque, 0.0f));
 
 	// 2) 采样扭矩曲线并归一化。
 	//    a) 用户曲线为空时保留设置结构内置的默认特性：归一化图求值会按点数计算步长，
@@ -42,7 +44,13 @@ Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() 
 	//       归一化横轴（0..MaxRPM）与实际曲线点错位
 	//    c) 采样点数固定，避免以 MaxRPM / 采样数 作步长（MaxRPM 为 0 时步长为零而永不退出）
 	//    d) 曲线范围只取一次（曲线在循环内不会变化），全零曲线无法归一化，此时按原值采样
-	const FRichCurve* TorqueRichCurve = TorqueCurve.GetRichCurveConst();
+	//    e) 曲线横轴为归一化转速 [0..1]；FNormalisedGraph 再将均匀采样点映射到 [0..MaxRPM]，
+	//       故求值必须使用归一化横轴，不能直接以 RPM 作为曲线输入
+	//    外部曲线资产优先：RuntimeFloatCurve 在配置了 ExternalCurve 时以资产为准，
+	//    内部曲线可能为空，读取内部曲线会静默退回默认特性
+	const FRichCurve* TorqueRichCurve = TorqueCurve.ExternalCurve
+		                                   ? &TorqueCurve.ExternalCurve->FloatCurve
+		                                   : TorqueCurve.GetRichCurveConst();
 	if (TorqueRichCurve && !TorqueRichCurve->IsEmpty())
 	{
 		Settings.TorqueCurve.Empty();
@@ -54,15 +62,15 @@ Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() 
 		constexpr auto NumSamples = 20;
 		for (auto I = 0; I <= NumSamples; ++I)
 		{
-			const float X = ClampedMaxRPM * static_cast<float>(I) / static_cast<float>(NumSamples);
-			Settings.TorqueCurve.AddNormalized(TorqueRichCurve->Eval(X) * NormalizeScale);
+			const float X = static_cast<float>(I) / static_cast<float>(NumSamples);
+			Settings.TorqueCurve.AddNormalized(FMath::Max(TorqueRichCurve->Eval(X) * NormalizeScale, 0.0f));
 		}
 	}
 
 	Settings.MaxRPM = static_cast<uint16>(ClampedMaxRPM);
 	Settings.IdleRPM = static_cast<uint16>(FMath::Clamp(EngineIdleRPM, 0, ClampedMaxRPM));
-	Settings.EngineBrakeEffect = EngineBrakeEffect;
-	Settings.EngineInertia = EngineInertia;
+	Settings.EngineBrakeEffect = Chaos::TorqueMToCm(FMath::Max(EngineBrakeEffect, 0.0f));
+	Settings.EngineInertia = Chaos::M2ToCm2(FMath::Max(EngineInertia, KINDA_SMALL_NUMBER));
 
 	// 3) 创建引擎仿真模块
 	Chaos::ISimulationModuleBase* Engine = new Chaos::FEngineSimModule(Settings);

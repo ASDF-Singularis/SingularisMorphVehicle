@@ -29,7 +29,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点离合器组件",
-		meta = (DisplayName = "离合器强度")
+		meta = (DisplayName = "离合器强度", ClampMin = "0", ClampMax = "1")
 	)
 	float ClutchStrength = 1.0f;
 

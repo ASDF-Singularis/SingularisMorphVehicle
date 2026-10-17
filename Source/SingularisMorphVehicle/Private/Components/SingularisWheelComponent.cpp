@@ -42,22 +42,24 @@ Chaos::ISimulationModuleBase* USingularisWheelComponent::CreateNewCoreModule() c
 	//    无转向、轴向 X、不反转，未挂槽位的轮胎按该默认结算地面交互
 	Chaos::FWheelSettings Settings;
 
-	Settings.Radius = WheelRadius;
-	Settings.Width = WheelWidth;
-	Settings.WheelInertia = WheelInertia;
-	Settings.MaxRotationVel = MaxRotationVel;
-	Settings.FrictionMultiplier = FrictionMultiplier;
+	// 几何与惯性：半径与惯性是角速度积分的分母，零值会退化为除零；
+	// 惯性按 kg·m² → kg·cm² 换算，与经 TorqueMToCm 换算的扭矩保持同一单位制
+	Settings.Radius = FMath::Max(WheelRadius, 1.0f);
+	Settings.Width = FMath::Max(WheelWidth, 0.0f);
+	Settings.WheelInertia = Chaos::M2ToCm2(FMath::Max(WheelInertia, KINDA_SMALL_NUMBER));
+	Settings.MaxRotationVel = FMath::Max(MaxRotationVel, 0.0f);
+	Settings.FrictionMultiplier = FMath::Max(FrictionMultiplier, 0.0f);
 	Settings.LateralSlipGraphMultiplier = LateralSlipGraphMultiplier;
 	for (const FVector2D& Point : LateralSlipGraph)
 		Settings.LateralSlipGraph.Add(Chaos::FVec2(static_cast<float>(Point.X), static_cast<float>(Point.Y)));
-	Settings.CorneringStiffness = CorneringStiffness * 10000.0f;
-	Settings.SlipAngleLimit = SlipAngleLimit;
+	Settings.CorneringStiffness = FMath::Max(CorneringStiffness, 0.0f) * 10000.0f;
+	Settings.SlipAngleLimit = FMath::Max(SlipAngleLimit, 0.0f);
 	Settings.SlipModifier = SlipModifier;
-	Settings.MaxBrakeTorque = Chaos::TorqueMToCm(MaxBrakeTorque);
+	Settings.MaxBrakeTorque = Chaos::TorqueMToCm(FMath::Max(MaxBrakeTorque, 0.0f));
 	Settings.HandbrakeEnabled = bHandbrakeEnabled;
-	Settings.HandbrakeTorque = Chaos::TorqueMToCm(HandbrakeTorque);
+	Settings.HandbrakeTorque = Chaos::TorqueMToCm(FMath::Max(HandbrakeTorque, 0.0f));
 	Settings.AutoHandbrakeEnabled = bAutoHandbrakeEnabled;
-	Settings.AutoHandbrakeVelocityThreshold = AutoHandbrakeVelocityThreshold;
+	Settings.AutoHandbrakeVelocityThreshold = FMath::Max(AutoHandbrakeVelocityThreshold, 0.0f);
 	Settings.SteeringEnabled = false;
 	Settings.MaxSteeringAngle = 0.0f;
 	Settings.ABSEnabled = bABSEnabled;

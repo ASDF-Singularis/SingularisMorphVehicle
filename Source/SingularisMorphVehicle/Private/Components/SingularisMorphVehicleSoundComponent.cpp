@@ -266,6 +266,15 @@ void USingularisMorphVehicleSoundComponent::PushContinuousParameters()
 	const float MaxRPM = Simulation->GetEngineMaxRPM();
 	const float RPMDenominator = MaxRPM > 0.0f ? MaxRPM : FMath::Max(FallbackMaxEngineRPM, 1.0f);
 	const float NormalizedRPM = FMath::Clamp(Simulation->GetEngineRPM() / RPMDenominator, 0.0f, 1.0f);
+	UE_LOG(
+		LogSingularisMorphVehicle,
+		Log,
+		TEXT("[%s] EngineRPM=%f NormalizedRPM=%f RPMDenominator=%f"),
+		*GetNameSafe(GetOwner()),
+		Simulation->GetEngineRPM(),
+		NormalizedRPM,
+		RPMDenominator
+	);
 
 	// 2) 车速归一化（公里/小时）
 	const float NormalizedSpeed = FMath::Clamp(

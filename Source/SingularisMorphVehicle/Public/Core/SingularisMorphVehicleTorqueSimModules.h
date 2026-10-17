@@ -19,7 +19,15 @@
  * 工厂注册均不受影响。
  */
 
-/** 引力奇点变型轮轴模拟模块。 */
+/**
+ * 引力奇点变型轮轴模拟模块。
+ *
+ * 轮轴是动力链中的纯扭矩中继（开式差速器节点）：TransmitTorque 将驱动力矩按子节点数
+ * 均分下推，并把自身转速同步为子节点平均转速。上游在同步之后仍按 AxleInertia 自积分，
+ * 但轮轴的驱动力矩已是变速箱输出（乘过齿比）的整车扭矩量级，而自惯量仅为传动轴惯量，
+ * 二者比值会使轮轴转速在单步内暴涨，并经齿比放大后直接顶到引擎最大转速。
+ * 此处只保留转速同步，不进行自惯量积分。
+ */
 class SINGULARISMORPHVEHICLE_API FSingularisMorphAxleSimModule : public Chaos::FAxleSimModule
 {
 public:
@@ -29,6 +37,15 @@ public:
 	virtual TSharedPtr<Chaos::FModuleNetData> GenerateNetData(const int32 NodeArrayIndex) const override
 	{
 		return nullptr;
+	}
+
+	virtual void Simulate(
+		float /*DeltaTime*/,
+		const Chaos::FAllInputs& /*Inputs*/,
+		Chaos::FSimModuleTree& VehicleModuleSystem
+	) override
+	{
+		TransmitTorque(VehicleModuleSystem, DriveTorque, 0.0f);
 	}
 };
 

@@ -17,7 +17,9 @@ USingularisClutchComponent::USingularisClutchComponent()
 Chaos::ISimulationModuleBase* USingularisClutchComponent::CreateNewCoreModule() const
 {
 	Chaos::FClutchSettings Settings;
-	Settings.ClutchStrength = ClutchStrength;
+
+	// 接合强度同时用于扭矩缩放与转速耦合，取值超出 [0..1] 会使耦合过冲或反向
+	Settings.ClutchStrength = FMath::Clamp(ClutchStrength, 0.0f, 1.0f);
 
 	Chaos::ISimulationModuleBase* Clutch = new Chaos::FClutchSimModule(Settings);
 

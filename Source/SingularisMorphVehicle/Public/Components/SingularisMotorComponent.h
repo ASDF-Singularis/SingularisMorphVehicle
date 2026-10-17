@@ -33,7 +33,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点电机组件",
-		meta = (DisplayName = "最大扭矩")
+		meta = (DisplayName = "最大扭矩", ClampMin = "0")
 	)
 	float MaxTorque = 200.0f;
 
@@ -42,7 +42,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点电机组件",
-		meta = (DisplayName = "最大RPM")
+		meta = (DisplayName = "最大RPM", ClampMin = "0")
 	)
 	float MaxRPM = 6000.0f;
 
@@ -51,7 +51,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点电机组件",
-		meta = (DisplayName = "电机惯性")
+		meta = (DisplayName = "电机惯性", ClampMin = "0.001")
 	)
 	float EngineInertia = 100.0f;
 

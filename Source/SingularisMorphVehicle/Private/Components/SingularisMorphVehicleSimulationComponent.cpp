@@ -2016,7 +2016,14 @@ float USingularisMorphVehicleSimulationComponent::GetEngineMaxRPM() const
 		{
 		case ESingularisMorphVehicleModuleType::Engine:
 			if (const USingularisEngineComponent* EngineSU = Cast<USingularisEngineComponent>(SUComp))
-				EngineMaxRPM = FMath::Max(EngineMaxRPM, static_cast<float>(EngineSU->MaxRPM));
+			{
+				// 与建模块时的 uint16 上限钳制保持一致，避免归一化分母大于实际可达转速
+				const int32 ClampedEngineMaxRPM = FMath::Min(
+					EngineSU->MaxRPM,
+					static_cast<int32>(MAX_uint16)
+				);
+				EngineMaxRPM = FMath::Max(EngineMaxRPM, static_cast<float>(ClampedEngineMaxRPM));
+			}
 			break;
 
 		case ESingularisMorphVehicleModuleType::Motor:

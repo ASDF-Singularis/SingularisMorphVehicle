@@ -25,7 +25,7 @@ class SINGULARISMORPHVEHICLE_API USingularisEngineComponent : public USingularis
 public:
 #pragma region Parameter
 
-	/** 引擎扭矩曲线（归一化） */
+	/** 引擎扭矩曲线（横轴为 0..1 归一化转速，纵轴为归一化扭矩） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -39,7 +39,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点引擎组件|扭矩",
-		meta = (DisplayName = "最大扭矩")
+		meta = (DisplayName = "最大扭矩", ClampMin = "0")
 	)
 	float MaxTorque = 200.0f;
 
@@ -61,12 +61,12 @@ public:
 	)
 	int32 EngineIdleRPM = 1200;
 
-	/** 引擎制动效应 [0..1] */
+	/** 引擎制动扭矩（牛顿·米），释放油门时施加于引擎的阻力 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点引擎组件|动力学",
-		meta = (DisplayName = "引擎制动效应")
+		meta = (DisplayName = "引擎制动扭矩", ClampMin = "0")
 	)
 	float EngineBrakeEffect = 150.0f;
 
@@ -75,7 +75,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点引擎组件|动力学",
-		meta = (DisplayName = "引擎惯性")
+		meta = (DisplayName = "引擎惯性", ClampMin = "0.001")
 	)
 	float EngineInertia = 1000.0f;
 

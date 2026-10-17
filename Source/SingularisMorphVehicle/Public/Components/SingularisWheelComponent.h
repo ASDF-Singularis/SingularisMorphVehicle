@@ -44,7 +44,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|几何",
-		meta = (DisplayName = "车轮半径")
+		meta = (DisplayName = "车轮半径", ClampMin = "1")
 	)
 	float WheelRadius = 30.0f;
 
@@ -53,16 +53,16 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|几何",
-		meta = (DisplayName = "车轮宽度")
+		meta = (DisplayName = "车轮宽度", ClampMin = "0")
 	)
 	float WheelWidth = 20.0f;
 
-	/** 车轮转动惯性 */
+	/** 车轮转动惯性（kg·m²） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|几何",
-		meta = (DisplayName = "车轮惯性")
+		meta = (DisplayName = "车轮惯性", ClampMin = "0.001")
 	)
 	float WheelInertia = 10.0f;
 
@@ -71,7 +71,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|几何",
-		meta = (DisplayName = "最大旋转角速度")
+		meta = (DisplayName = "最大旋转角速度", ClampMin = "0")
 	)
 	float MaxRotationVel = 100.0f;
 
@@ -80,7 +80,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|摩擦",
-		meta = (DisplayName = "摩擦倍率")
+		meta = (DisplayName = "摩擦倍率", ClampMin = "0")
 	)
 	float FrictionMultiplier = 2.0f;
 
@@ -98,7 +98,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|摩擦",
-		meta = (DisplayName = "侧偏刚度")
+		meta = (DisplayName = "侧偏刚度", ClampMin = "0")
 	)
 	float CorneringStiffness = 1000.0f;
 
@@ -116,7 +116,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|摩擦",
-		meta = (DisplayName = "侧滑角上限")
+		meta = (DisplayName = "侧滑角上限", ClampMin = "0")
 	)
 	float SlipAngleLimit = 8.0f;
 
@@ -152,7 +152,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "最大制动扭矩")
+		meta = (DisplayName = "最大制动扭矩", ClampMin = "0")
 	)
 	float MaxBrakeTorque = 2000.0f;
 
@@ -170,7 +170,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled")
+		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled", ClampMin = "0")
 	)
 	float HandbrakeTorque = 2000.0f;
 
@@ -188,7 +188,7 @@ public:
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled")
+		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled", ClampMin = "0")
 	)
 	float AutoHandbrakeVelocityThreshold = 10.0f;
 
