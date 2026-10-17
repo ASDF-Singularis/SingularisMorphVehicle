@@ -474,6 +474,9 @@ private:
 	/** 状态输入容器（GT 侧） */
 	FModuleInputContainer StateInputContainer{};
 
+	/** 已禁用的控制输入通道（仅游戏线程；按名称保存，输入配置重建后仍有效） */
+	TSet<FName> DisabledControlNames{};
+
 	/** 当前合并的输入配置（用于变更检测） */
 	TArray<FModuleInputSetup> CombinedInputConfiguration{};
 
@@ -716,6 +719,56 @@ public:
 	)
 	void SetGearInput(int32 Gear);
 
+	/**
+	 * 禁用/启用单个控制输入通道。
+	 *
+	 * 通道名与 SetInput* 使用的输入名一致（如 Throttle、Steering、Brake），
+	 * 通过 AddInput 扩展的通道同样适用。
+	 * 禁用期间该通道在 ProduceInput 产出后统一按中性值处理，
+	 * 不受玩家、AI 或自定义输入生产者的写入影响；重新启用后下一物理步恢复。
+	 * 闸门在输入生产端生效：本地控制方禁用后的输入会随网络物理复制到其它端；
+	 * 服务器要单方面覆盖远端客户端已产出的输入，需在输入同步层另行处理。
+	 * 配置建立后传入未配置的通道名会被忽略并告警。
+	 */
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "引力奇点变型载具仿真|输入",
+		meta = (DisplayName = "禁用/启用控制通道")
+	)
+	void SetControlEnabled(const FName ControlName, const bool bEnabled);
+
+	/** 批量禁用/启用控制输入通道（逐项等价于 SetControlEnabled） */
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "引力奇点变型载具仿真|输入",
+		meta = (DisplayName = "批量禁用/启用控制通道")
+	)
+	void SetControlsEnabled(const TArray<FName>& ControlNames, const bool bEnabled);
+
+	/** 禁用/启用调用时已配置的全部控制输入通道 */
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "引力奇点变型载具仿真|输入",
+		meta = (DisplayName = "禁用/启用全部控制通道")
+	)
+	void SetAllControlsEnabled(const bool bEnabled);
+
+	/** 查询控制输入通道是否启用（未禁用的通道均返回 true） */
+	UFUNCTION(
+		BlueprintPure,
+		Category = "引力奇点变型载具仿真|输入",
+		meta = (DisplayName = "查询控制通道启用")
+	)
+	bool IsControlEnabled(const FName ControlName) const;
+
+	/** 获取当前被禁用的控制输入通道 */
+	UFUNCTION(
+		BlueprintPure,
+		Category = "引力奇点变型载具仿真|输入",
+		meta = (DisplayName = "获取禁用的控制通道")
+	)
+	TArray<FName> GetDisabledControls() const;
+
 	/** 写入布尔状态输入 */
 	void SetState(const FName& Name, const bool Value);
 
@@ -894,6 +947,9 @@ private:
 
 	/** 初始化输入生产者与输入容器（配置变更时幂等重建并迁移已缓冲输入值） */
 	void SetupInputConfiguration(bool bForceReinitialize = false);
+
+	/** 将被禁控制通道的产出值压为对应类型的中性值（ProduceInput 收口处调用） */
+	void ApplyControlGates();
 
 	/** 将动画数据应用到非骨骼可视化组件 */
 	void UpdateNonSkeletalAnimations();

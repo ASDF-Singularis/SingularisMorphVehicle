@@ -1448,6 +1448,62 @@ void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 	TargetGearInput = FMath::Clamp(Gear, MinGear, MaxGear);
 }
 
+void USingularisMorphVehicleSimulationComponent::SetControlEnabled(
+	const FName ControlName,
+	const bool bEnabled
+)
+{
+	if (ControlName.IsNone()) return;
+
+	// 配置已建立时校验通道名，避免拼写错误静默失效；配置尚未建立时允许预登记
+	if (!InputNameMap.IsEmpty() && !InputNameMap.Contains(ControlName))
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Warning,
+			TEXT("SetControlEnabled: 未配置的控制输入通道 '%s'，请求已忽略"),
+			*ControlName.ToString()
+		);
+		return;
+	}
+
+	if (bEnabled)
+		DisabledControlNames.Remove(ControlName);
+	else
+		DisabledControlNames.Add(ControlName);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetControlsEnabled(
+	const TArray<FName>& ControlNames,
+	const bool bEnabled
+)
+{
+	for (const FName& ControlName : ControlNames)
+		SetControlEnabled(ControlName, bEnabled);
+}
+
+void USingularisMorphVehicleSimulationComponent::SetAllControlsEnabled(const bool bEnabled)
+{
+	if (bEnabled)
+	{
+		DisabledControlNames.Reset();
+		return;
+	}
+
+	for (const auto& Pair : InputNameMap)
+		DisabledControlNames.Add(Pair.Key);
+}
+
+bool USingularisMorphVehicleSimulationComponent::IsControlEnabled(const FName ControlName) const
+{
+	return !DisabledControlNames.Contains(ControlName);
+}
+
+TArray<FName> USingularisMorphVehicleSimulationComponent::GetDisabledControls() const
+{
+	return DisabledControlNames.Array();
+}
+
 void USingularisMorphVehicleSimulationComponent::SetState(const FName& Name, const bool Value)
 {
 	FInputInterface Inputs(StateNameMap, StateInputContainer, InputQuantizationType);
@@ -1747,6 +1803,10 @@ void USingularisMorphVehicleSimulationComponent::ProduceInput(
 	//    会在恢复后把多次脉冲叠加成一次输入
 	if (InputProducer)
 		InputProducer->ProduceInput(PhysicsStep, NumSteps, InputNameMap, InputsContainer);
+
+	// 控制通道闸门：在生产者产出后、写入物理线程前统一压平被禁通道，
+	// 使闸门对所有输入生产者一致生效，禁用后的输入容器自然随网络复制
+	ApplyControlGates();
 
 	IPhysicsProxyBase* Proxy = GetPhysicsProxy();
 	if (!Proxy) return;
@@ -2349,6 +2409,41 @@ void USingularisMorphVehicleSimulationComponent::SetupInputConfiguration(
 		VehicleSimulationPT->SetInputQuantizationType(InputQuantizationType);
 		VehicleSimulationPT->SetInputMappings(InputNameMap);
 		VehicleSimulationPT->SetStateMappings(StateNameMap);
+	}
+}
+
+void USingularisMorphVehicleSimulationComponent::ApplyControlGates()
+{
+	if (DisabledControlNames.IsEmpty()) return;
+
+	TArray<FModuleInputValue>& InputValues = InputsContainer.AccessInputValues();
+
+	for (const FName& ControlName : DisabledControlNames)
+	{
+		const int32* Index = InputNameMap.Find(ControlName);
+		if (!Index || !InputValues.IsValidIndex(*Index)) continue;
+
+		FModuleInputValue& InputValue = InputValues[*Index];
+
+		// 按通道自身类型写入中性值，避免类型不匹配破坏下游模块读取
+		switch (InputValue.GetValueType())
+		{
+		case EModuleInputValueType::MBoolean:
+			InputValue.Set(FModuleInputValue(false));
+			break;
+		case EModuleInputValueType::MInteger:
+			InputValue.Set(FModuleInputValue(0));
+			break;
+		case EModuleInputValueType::MAxis1D:
+			InputValue.Set(FModuleInputValue(0.0));
+			break;
+		case EModuleInputValueType::MAxis2D:
+			InputValue.Set(FModuleInputValue(FVector2D::ZeroVector));
+			break;
+		case EModuleInputValueType::MAxis3D:
+			InputValue.Set(FModuleInputValue(FVector::ZeroVector));
+			break;
+		}
 	}
 }
 
