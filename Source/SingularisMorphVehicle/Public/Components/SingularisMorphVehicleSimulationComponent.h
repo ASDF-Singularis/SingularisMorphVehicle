@@ -151,7 +151,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "仿真树处理顺序")
 	)
 	TEnumAsByte<ESimTreeProcessingOrder> SimulationTreeProcessingOrder = LeafFirst;
@@ -160,7 +160,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "输入量化类型")
 	)
 	EModuleInputQuantizationType InputQuantizationType = EModuleInputQuantizationType::Default_16Bits;
@@ -169,7 +169,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "输入生产者类")
 	)
 	TSubclassOf<UVehicleInputProducerBase> InputProducerClass{};
@@ -178,7 +178,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "状态输入配置")
 	)
 	TArray<FModuleInputSetup> StateInputConfiguration{};
@@ -187,7 +187,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "控制输入配置")
 	)
 	TArray<FModuleInputSetup> InputConfig{};
@@ -203,7 +203,7 @@ public:
 		Instanced,
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "物理适配器")
 	)
 	TObjectPtr<USingularisMorphVehiclePhysicsAdapter> PhysicsAdapter = nullptr;
@@ -212,7 +212,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真",
+		Category = "引力奇点变型载具仿真组件",
 		meta = (DisplayName = "禁止休眠")
 	)
 	bool bKeepVehicleAwake = true;
@@ -221,7 +221,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|阻尼",
+		Category = "引力奇点变型载具仿真组件|阻尼",
 		meta = (DisplayName = "线性阻尼")
 	)
 	float LinearDamping = 0.01f;
@@ -230,7 +230,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|阻尼",
+		Category = "引力奇点变型载具仿真组件|阻尼",
 		meta = (DisplayName = "角阻尼")
 	)
 	float AngularDamping = 0.5f;
@@ -239,7 +239,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|悬挂",
+		Category = "引力奇点变型载具仿真组件|悬挂",
 		meta = (DisplayName = "悬挂射线通道")
 	)
 	TEnumAsByte<ECollisionChannel> SuspensionCollisionChannel = ECC_WorldDynamic;
@@ -248,7 +248,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|悬挂",
+		Category = "引力奇点变型载具仿真组件|悬挂",
 		meta = (DisplayName = "悬挂射线碰撞响应")
 	)
 	FCollisionResponseContainer SuspensionTraceCollisionResponses{};
@@ -257,7 +257,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|悬挂",
+		Category = "引力奇点变型载具仿真组件|悬挂",
 		meta = (DisplayName = "悬挂射线复杂碰撞")
 	)
 	bool bSuspensionTraceComplex = true;
@@ -266,7 +266,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|悬挂",
+		Category = "引力奇点变型载具仿真组件|悬挂",
 		meta = (DisplayName = "悬挂射线类型")
 	)
 	ESingularisMorphTraceType TraceType = ESingularisMorphTraceType::Raycast;
@@ -280,7 +280,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|悬挂",
+		Category = "引力奇点变型载具仿真组件|悬挂",
 		meta = (DisplayName = "默认路面摩擦", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float DefaultSurfaceFriction = 0.7f;
@@ -294,7 +294,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|车轮碰撞",
+		Category = "引力奇点变型载具仿真组件|车轮碰撞",
 		meta = (DisplayName = "车轮模拟期碰撞启用")
 	)
 	TEnumAsByte<ECollisionEnabled::Type> SimulatedWheelCollisionEnabled = ECollisionEnabled::QueryOnly;
@@ -309,7 +309,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|车轮碰撞",
+		Category = "引力奇点变型载具仿真组件|车轮碰撞",
 		meta = (DisplayName = "车轮模拟期碰撞响应")
 	)
 	FCollisionResponseContainer SimulatedWheelCollisionResponses{};
@@ -318,7 +318,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|事件判定",
+		Category = "引力奇点变型载具仿真组件|事件判定",
 		meta = (DisplayName = "打滑起始侧滑角(度)", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float SlipStartAngleThreshold = 6.0f;
@@ -327,7 +327,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|事件判定",
+		Category = "引力奇点变型载具仿真组件|事件判定",
 		meta = (DisplayName = "打滑解除侧滑角(度)", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float SlipStopAngleThreshold = 3.0f;
@@ -336,7 +336,7 @@ public:
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
-		Category = "引力奇点变型载具仿真|事件判定",
+		Category = "引力奇点变型载具仿真组件|事件判定",
 		meta = (DisplayName = "触底判定容差(厘米)", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float SuspensionBottomOutTolerance = 0.5f;
@@ -354,7 +354,7 @@ public:
 	/** 模拟模块添加事件（Blueprint） */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点变型载具仿真|事件分发器",
+		Category = "引力奇点变型载具仿真组件|事件分发器",
 		meta = (DisplayName = "模拟模块添加")
 	)
 	FOnSimulationModuleAdded OnSimulationModuleAddedEvent{};
@@ -362,7 +362,7 @@ public:
 	/** 模拟模块移除事件（Blueprint） */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点变型载具仿真|事件分发器",
+		Category = "引力奇点变型载具仿真组件|事件分发器",
 		meta = (DisplayName = "模拟模块移除")
 	)
 	FOnSimulationModuleRemoved OnSimulationModuleRemovedEvent{};
@@ -370,7 +370,7 @@ public:
 	/** 换挡事件：非空挡位咬合时广播（空挡为换挡过渡态不广播，首次挡位输出仅建立基准） */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点变型载具仿真|事件分发器",
+		Category = "引力奇点变型载具仿真组件|事件分发器",
 		meta = (DisplayName = "换挡")
 	)
 	FOnGearShiftedSignature OnGearShiftedEvent{};
@@ -378,7 +378,7 @@ public:
 	/** 车轮开始打滑事件 */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点变型载具仿真|事件分发器",
+		Category = "引力奇点变型载具仿真组件|事件分发器",
 		meta = (DisplayName = "车轮开始打滑")
 	)
 	FOnWheelSlipStartedSignature OnWheelSlipStartedEvent{};
@@ -386,7 +386,7 @@ public:
 	/** 车轮停止打滑事件（车轮模块被移除时同样广播，供观察者解除驻留状态） */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点变型载具仿真|事件分发器",
+		Category = "引力奇点变型载具仿真组件|事件分发器",
 		meta = (DisplayName = "车轮停止打滑")
 	)
 	FOnWheelSlipStoppedSignature OnWheelSlipStoppedEvent{};
@@ -394,7 +394,7 @@ public:
 	/** 悬挂触底事件（一次性冲击事件，仅在触底上升沿广播） */
 	UPROPERTY(
 		BlueprintAssignable,
-		Category = "引力奇点变型载具仿真|事件分发器",
+		Category = "引力奇点变型载具仿真组件|事件分发器",
 		meta = (DisplayName = "悬挂触底")
 	)
 	FOnSuspensionBottomedOutSignature OnSuspensionBottomedOutEvent{};
@@ -640,7 +640,7 @@ public:
 	/** 追加一条控制输入配置并重建输入容器 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|API",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "添加控制输入配置")
 	)
 	void AddInput(const FModuleInputSetup& InputSetup);
@@ -654,7 +654,7 @@ public:
 	/** 写入布尔控制输入 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "设置布尔输入")
 	)
 	void SetInputBool(
@@ -666,7 +666,7 @@ public:
 	/** 写入整数控制输入 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "设置整数输入")
 	)
 	void SetInputInteger(
@@ -678,7 +678,7 @@ public:
 	/** 写入一维轴控制输入 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "设置一维轴输入")
 	)
 	void SetInputAxis1D(
@@ -690,7 +690,7 @@ public:
 	/** 写入二维轴控制输入 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "设置二维轴输入")
 	)
 	void SetInputAxis2D(
@@ -702,7 +702,7 @@ public:
 	/** 写入三维轴控制输入 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "设置三维轴输入")
 	)
 	void SetInputAxis3D(
@@ -714,7 +714,7 @@ public:
 	/** 设置目标挡位（手动变速箱），越界请求按变速箱实际挡数钳制 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "设置挡位输入")
 	)
 	void SetGearInput(int32 Gear);
@@ -732,7 +732,7 @@ public:
 	 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "禁用/启用控制通道")
 	)
 	void SetControlEnabled(const FName ControlName, const bool bEnabled);
@@ -740,7 +740,7 @@ public:
 	/** 批量禁用/启用控制输入通道（逐项等价于 SetControlEnabled） */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "批量禁用/启用控制通道")
 	)
 	void SetControlsEnabled(const TArray<FName>& ControlNames, const bool bEnabled);
@@ -748,7 +748,7 @@ public:
 	/** 禁用/启用调用时已配置的全部控制输入通道 */
 	UFUNCTION(
 		BlueprintCallable,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "禁用/启用全部控制通道")
 	)
 	void SetAllControlsEnabled(const bool bEnabled);
@@ -756,7 +756,7 @@ public:
 	/** 查询控制输入通道是否启用（未禁用的通道均返回 true） */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "查询控制通道启用")
 	)
 	bool IsControlEnabled(const FName ControlName) const;
@@ -764,7 +764,7 @@ public:
 	/** 获取当前被禁用的控制输入通道 */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|输入",
+		Category = "引力奇点变型载具仿真组件|API",
 		meta = (DisplayName = "获取禁用的控制通道")
 	)
 	TArray<FName> GetDisabledControls() const;
@@ -845,7 +845,7 @@ public:
 	/** 获取当前物理适配器（可能为 nullptr = 手动模式） */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "获取物理适配器")
 	)
 	USingularisMorphVehiclePhysicsAdapter* GetPhysicsAdapter() const { return PhysicsAdapter; }
@@ -853,7 +853,7 @@ public:
 	/** 是否本地控制 */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "是否本地控制")
 	)
 	bool IsLocallyControlled() const;
@@ -861,7 +861,7 @@ public:
 	/** 获取当前挡位 */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "获取当前挡位")
 	)
 	int32 GetCurrentGear() const { return CurrentGear; }
@@ -869,7 +869,7 @@ public:
 	/** 是否正在倒车 */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "是否倒车")
 	)
 	bool IsReversing() const { return CurrentGear < 0; }
@@ -877,7 +877,7 @@ public:
 	/** 获取引擎转速（RPM） */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "获取引擎转速")
 	)
 	float GetEngineRPM() const { return EngineRPM; }
@@ -885,7 +885,7 @@ public:
 	/** 获取引擎扭矩 */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "获取引擎扭矩")
 	)
 	float GetEngineTorque() const { return EngineTorque; }
@@ -899,7 +899,7 @@ public:
 	 */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "获取引擎最大转速")
 	)
 	float GetEngineMaxRPM() const;
@@ -907,7 +907,7 @@ public:
 	/** 获取车速（公里/小时） */
 	UFUNCTION(
 		BlueprintPure,
-		Category = "引力奇点变型载具仿真|State",
+		Category = "引力奇点变型载具仿真组件|State",
 		meta = (DisplayName = "获取车速(km/h)")
 	)
 	float GetVehicleSpeed() const;
