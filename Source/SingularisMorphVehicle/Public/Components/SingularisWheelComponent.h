@@ -18,12 +18,14 @@ class USingularisUprightComponent;
 /**
  * 引力奇点车轮组件
  *
- * 模拟车轮的转动、摩擦与制动行为，支持 ABS、牵引力控制、手刹等高级特性。
+ * 模拟车轮的转动与摩擦行为，仅持有轮胎本体的属性：几何（半径/宽度）、
+ * 惯性、转速上限与摩擦特性（摩擦倍率/侧滑图/侧偏刚度/打滑衰减）。
  * 通过物理线程与悬挂模块协同工作，输出数据通过 OnWheelTouchChange 事件回调至游戏线程。
  *
- * 转向、轴向与反转方向是轮位属性而非轮胎属性：三项配置全部由立轴槽位持有，
- * 挂载槽位时在建树期注入车轮模块（见 ApplySlotConfig）。本组件不持有这三项配置：
- * 未挂载的轮胎以中性默认（无转向、轴向 X、不反转）作为简单滚动体，
+ * 其余均为轮位属性而非轮胎属性：转向、轴向、反转、制动系统（行车制动/手刹/
+ * 自动手刹）、辅助系统（ABS/牵引力控制）与力作用点偏移全部由立轴槽位持有，
+ * 挂载槽位时在建树期注入车轮模块（见 ApplySlotConfig）。本组件不持有这些配置：
+ * 未挂载的轮胎以中性默认（无转向、无制动、轴向 X、不反转）作为简单滚动体，
  * 其地面交互按该默认结算。
  */
 UCLASS(
@@ -39,7 +41,7 @@ class SINGULARISMORPHVEHICLE_API USingularisWheelComponent : public USingularisM
 public:
 #pragma region Parameter
 
-	/** 车轮半径（厘米） */
+	/** 车轮半径（cm） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -48,7 +50,7 @@ public:
 	)
 	float WheelRadius = 30.0f;
 
-	/** 车轮宽度（厘米） */
+	/** 车轮宽度（cm） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -67,7 +69,7 @@ public:
 	float WheelInertia = 10.0f;
 
 	/**
-	 * 最大旋转角速度（弧度/秒）
+	 * 最大旋转角速度（rad/s）
 	 *
 	 * 车轮自身的安全上限；若低于引擎最高转速经最高挡传动链折算的轮速，
 	 * 建树时会自动提升到该轮速，避免车轮限速先于引擎限速生效。
@@ -134,78 +136,6 @@ public:
 	)
 	float SlipModifier = 0.9f;
 
-	/** 是否启用 ABS */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|辅助",
-		meta = (DisplayName = "启用ABS")
-	)
-	bool bABSEnabled = true;
-
-	/** 是否启用牵引力控制 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|辅助",
-		meta = (DisplayName = "启用牵引力控制")
-	)
-	bool bTractionControlEnabled = true;
-
-	/** 最大制动扭矩 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "最大制动扭矩", ClampMin = "0")
-	)
-	float MaxBrakeTorque = 2000.0f;
-
-	/** 是否启用手刹 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "启用手刹")
-	)
-	bool bHandbrakeEnabled = false;
-
-	/** 手刹扭矩 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled", ClampMin = "0")
-	)
-	float HandbrakeTorque = 2000.0f;
-
-	/** 是否启用自动手刹 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "启用自动手刹")
-	)
-	bool bAutoHandbrakeEnabled = false;
-
-	/** 自动手刹触发速度阈值（厘米/秒） */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|制动",
-		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled", ClampMin = "0")
-	)
-	float AutoHandbrakeVelocityThreshold = 10.0f;
-
-	/** 力作用点偏移 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点车轮组件|偏移",
-		meta = (DisplayName = "力偏移")
-	)
-	FVector ForceOffset = FVector::ZeroVector;
-
 #pragma endregion
 
 #pragma region 事件分发器
@@ -234,7 +164,7 @@ private:
 	 */
 	float CachedSteeringAngleDegrees = 0.0f;
 
-	/** 动力链允许的最高轮速（弧度/秒），0 表示未提供；建树期由 SimulationComponent 写入 */
+	/** 动力链允许的最高轮速（rad/s），0 表示未提供；建树期由 SimulationComponent 写入 */
 	float EffectiveMaxRotationVel = 0.0f;
 
 #pragma endregion
@@ -263,7 +193,7 @@ public:
 
 	virtual Chaos::ISimulationModuleBase* CreateNewCoreModule() const override;
 
-	/** 建树期立轴槽位配置注入：转向/轴向/反转写入本组件创建的车轮模块（见 ApplyUprightSlotConfig） */
+	/** 建树期立轴槽位配置注入：转向/轴向/反转/制动/辅助/力偏移整体写入本组件创建的车轮模块（见 ApplyUprightSlotConfig） */
 	virtual void ApplySlotConfig(
 		Chaos::ISimulationModuleBase* CoreModule,
 		const USingularisUprightComponent* UprightSU

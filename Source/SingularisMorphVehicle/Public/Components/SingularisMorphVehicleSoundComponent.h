@@ -99,7 +99,7 @@ public:
 	)
 	float FallbackMaxEngineRPM = 6000.0f;
 
-	/** 车速归一化上限（公里/小时） */
+	/** 车速归一化上限（km/h） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

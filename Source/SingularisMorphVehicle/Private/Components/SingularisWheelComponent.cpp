@@ -37,9 +37,10 @@ void USingularisWheelComponent::OnOutputReady(const Chaos::FSimOutputData* Outpu
 
 Chaos::ISimulationModuleBase* USingularisWheelComponent::CreateNewCoreModule() const
 {
-	// 1) 轮胎设置：转向/轴向/反转均为轮位（立轴）配置，由槽位在建树期注入
-	//    （ApplySlotConfig）；此处仅构建自由轮语义的中性基准：
-	//    无转向、轴向 X、不反转，未挂槽位的轮胎按该默认结算地面交互
+	// 1) 轮胎设置：转向/轴向/反转/制动/辅助/力偏移均为轮位（立轴）配置，
+	//    由槽位在建树期注入（ApplySlotConfig）；此处仅构建自由轮语义的中性基准：
+	//    无转向、无制动、无辅助、轴向 X、不反转，
+	//    未挂槽位的轮胎按该默认结算地面交互
 	Chaos::FWheelSettings Settings;
 
 	// 几何与惯性：半径与惯性是角速度积分的分母，零值会退化为除零；
@@ -55,18 +56,18 @@ Chaos::ISimulationModuleBase* USingularisWheelComponent::CreateNewCoreModule() c
 	Settings.CorneringStiffness = FMath::Max(CorneringStiffness, 0.0f) * 10000.0f;
 	Settings.SlipAngleLimit = FMath::Max(SlipAngleLimit, 0.0f);
 	Settings.SlipModifier = SlipModifier;
-	Settings.MaxBrakeTorque = Chaos::TorqueMToCm(FMath::Max(MaxBrakeTorque, 0.0f));
-	Settings.HandbrakeEnabled = bHandbrakeEnabled;
-	Settings.HandbrakeTorque = Chaos::TorqueMToCm(FMath::Max(HandbrakeTorque, 0.0f));
-	Settings.AutoHandbrakeEnabled = bAutoHandbrakeEnabled;
-	Settings.AutoHandbrakeVelocityThreshold = FMath::Max(AutoHandbrakeVelocityThreshold, 0.0f);
 	Settings.SteeringEnabled = false;
 	Settings.MaxSteeringAngle = 0.0f;
-	Settings.ABSEnabled = bABSEnabled;
-	Settings.TractionControlEnabled = bTractionControlEnabled;
+	Settings.ABSEnabled = false;
+	Settings.TractionControlEnabled = false;
+	Settings.MaxBrakeTorque = 0.0f;
+	Settings.HandbrakeEnabled = false;
+	Settings.HandbrakeTorque = 0.0f;
+	Settings.AutoHandbrakeEnabled = false;
+	Settings.AutoHandbrakeVelocityThreshold = 0.0f;
 	Settings.Axis = Chaos::EWheelAxis::X;
 	Settings.ReverseDirection = false;
-	Settings.ForceOffset = ForceOffset;
+	Settings.ForceOffset = FVector::ZeroVector;
 
 	// 2) 转向动力学设置：默认关闭，挂载立轴槽位时由注入整体替换
 	FSingularisMorphWheelSteeringSettings SteeringSettings;
@@ -85,11 +86,9 @@ void USingularisWheelComponent::ApplySlotConfig(
 	if (!CoreModule || !UprightSU) return;
 
 	// 本组件创建的模块恒为 FSingularisMorphWheelSimModule（见 CreateNewCoreModule）；
-	// 轴向/反转由核心物理路径从模块设置读取，注入必须在入树前一次性完成，
-	// 不能按帧从父模块查询（否则需复制核心 Simulate 的物理路径）
+	// 轴向/反转/制动/辅助/力偏移均由核心物理路径从模块设置读取，
+	// 注入必须在入树前一次性完成，不能按帧从父模块查询（否则需复制核心 Simulate 的物理路径）
 	static_cast<FSingularisMorphWheelSimModule*>(CoreModule)->ApplyUprightSlotConfig(
-		UprightSU->BuildSteeringSettings(CachedSteeringAngleDegrees),
-		UprightSU->AxisType == ESingularisMorphVehicleWheelAxisType::Y ? Chaos::EWheelAxis::Y : Chaos::EWheelAxis::X,
-		UprightSU->ReverseDirection
+		UprightSU->BuildSlotConfig(CachedSteeringAngleDegrees)
 	);
 }

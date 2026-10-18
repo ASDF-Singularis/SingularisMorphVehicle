@@ -1,5 +1,7 @@
 #include "Components/SingularisUprightComponent.h"
 
+#include <VehicleUtility.h>
+
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisUprightComponent)
 
 namespace
@@ -72,4 +74,27 @@ FSingularisMorphWheelSteeringSettings USingularisUprightComponent::BuildSteering
 	BakeSpeedSteeringCurve(SteeringSetup.SpeedSteeringCurve, Settings.SpeedSteeringCurve);
 
 	return Settings;
+}
+
+FSingularisMorphUprightSlotConfig USingularisUprightComponent::BuildSlotConfig(
+	const float InitialSteeringAngleDegrees
+) const
+{
+	FSingularisMorphUprightSlotConfig SlotConfig;
+	SlotConfig.SteeringSettings = BuildSteeringSettings(InitialSteeringAngleDegrees);
+	SlotConfig.Axis = AxisType == ESingularisMorphVehicleWheelAxisType::Y ? Chaos::EWheelAxis::Y : Chaos::EWheelAxis::X;
+	SlotConfig.bReverseDirection = ReverseDirection;
+
+	// 制动/辅助安装于轮位而非轮胎本体：扭矩按 N·m → kg·cm²/s² 换算（TorqueMToCm），
+	// 与车轮模块设置的单位制保持一致
+	SlotConfig.MaxBrakeTorque = Chaos::TorqueMToCm(FMath::Max(MaxBrakeTorque, 0.0f));
+	SlotConfig.bHandbrakeEnabled = bHandbrakeEnabled;
+	SlotConfig.HandbrakeTorque = Chaos::TorqueMToCm(FMath::Max(HandbrakeTorque, 0.0f));
+	SlotConfig.bAutoHandbrakeEnabled = bAutoHandbrakeEnabled;
+	SlotConfig.AutoHandbrakeVelocityThreshold = FMath::Max(AutoHandbrakeVelocityThreshold, 0.0f);
+	SlotConfig.bABSEnabled = bABSEnabled;
+	SlotConfig.bTractionControlEnabled = bTractionControlEnabled;
+	SlotConfig.ForceOffset = ForceOffset;
+
+	return SlotConfig;
 }

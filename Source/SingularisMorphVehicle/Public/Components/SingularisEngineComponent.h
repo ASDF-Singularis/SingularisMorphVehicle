@@ -34,7 +34,7 @@ public:
 	)
 	FRuntimeFloatCurve TorqueCurve{};
 
-	/** 峰值扭矩（牛顿·米） */
+	/** 峰值扭矩（N·m） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -66,7 +66,7 @@ public:
 	)
 	int32 EngineIdleRPM = 1200;
 
-	/** 引擎制动扭矩（牛顿·米），释放油门时施加于引擎的阻力 */
+	/** 引擎制动扭矩（N·m），释放油门时施加于引擎的阻力 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

@@ -276,7 +276,7 @@ void USingularisMorphVehicleSoundComponent::PushContinuousParameters()
 		RPMDenominator
 	);
 
-	// 2) 车速归一化（公里/小时）
+	// 2) 车速归一化（km/h）
 	const float NormalizedSpeed = FMath::Clamp(
 		Simulation->GetVehicleSpeed() / FMath::Max(MaxSpeedKmh, 1.0f),
 		0.0f,

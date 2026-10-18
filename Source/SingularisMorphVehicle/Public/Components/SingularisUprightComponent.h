@@ -64,7 +64,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 	)
 	float AngleRatio = 0.7f;
 
-	/** 轴距（厘米，阿克曼几何用） */
+	/** 轴距（cm，阿克曼几何用） */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
@@ -78,7 +78,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 	)
 	float WheelBase = 280.0f;
 
-	/** 轮距（厘米，阿克曼几何用） */
+	/** 轮距（cm，阿克曼几何用） */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
@@ -93,7 +93,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 	float TrackWidth = 160.0f;
 
 	/**
-	 * 轮胎回正效应增益（度/(牛顿·秒)），0 表示关闭。
+	 * 轮胎回正效应增益（度/(N·s)），0 表示关闭。
 	 *
 	 * 开启后以轮胎侧向力大小为比例持续削减转向角幅值，使稳态转角小于目标角
 	 * （需驾驶员持续输入以保持转角），并在附着突变时产生转向反馈。
@@ -124,15 +124,16 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 /**
  * 引力奇点立轴组件
  *
- * 车架上的轮位槽配置载体：持有该轮位的转向、轴向与反转方向配置，
- * 不创建模拟模块、不进入模拟树。轮胎安装进槽位匹配半径内时，
+ * 车架上的轮位槽配置载体：持有该轮位的全部轮位配置——转向、轴向与反转方向、
+ * 制动系统（行车制动、手刹、自动手刹）、辅助系统（ABS、牵引力控制）与轮胎
+ * 合力作用点偏移，不创建模拟模块、不进入模拟树。轮胎安装进槽位匹配半径内时，
  * SimulationComponent 在建树期将本组件配置注入车轮模块
  * （见 WheelSU 的 ApplySlotConfig），轮胎模块代码本身零改动。
  *
  * 驱动组件指向车架上的槽位标记场景组件，其世界位置即槽位位置；
  * 邻近匹配按轮胎驱动组件与槽位标记的距离取匹配半径内的最近者，
  * 每个槽位至多消费一个轮胎。未匹配任何立轴的轮胎为自由轮：
- * 挂到底盘之下，无驱动、无转向，仅提供滚动。
+ * 挂到底盘之下，无驱动、无转向、无制动，仅提供滚动。
  */
 UCLASS(
 	Blueprintable,
@@ -147,7 +148,7 @@ class SINGULARISMORPHVEHICLE_API USingularisUprightComponent : public USingulari
 public:
 #pragma region Parameter
 
-	/** 槽位匹配半径（厘米）：轮胎驱动组件距槽位标记小于该值时可挂载本槽位 */
+	/** 槽位匹配半径（cm）：轮胎驱动组件距槽位标记小于该值时可挂载本槽位 */
 	UPROPERTY(
 		EditAnywhere,
 		BlueprintReadOnly,
@@ -201,6 +202,78 @@ public:
 	)
 	FSingularisMorphVehicleSteeringSetup SteeringSetup{};
 
+	/** 最大行车制动扭矩（N·m），由安装在该轮位的制动器决定 */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|制动",
+		meta = (DisplayName = "最大制动扭矩", ClampMin = "0")
+	)
+	float MaxBrakeTorque = 2000.0f;
+
+	/** 是否启用手刹（哪些轮位响应手刹是轮位配置，典型：仅后轮） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|制动",
+		meta = (DisplayName = "启用手刹")
+	)
+	bool bHandbrakeEnabled = false;
+
+	/** 手刹扭矩（N·m） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|制动",
+		meta = (DisplayName = "手刹扭矩", EditCondition = "bHandbrakeEnabled", ClampMin = "0")
+	)
+	float HandbrakeTorque = 2000.0f;
+
+	/** 是否启用自动手刹（松开油门刹车且低速时自动施加手刹扭矩驻车） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|制动",
+		meta = (DisplayName = "启用自动手刹")
+	)
+	bool bAutoHandbrakeEnabled = false;
+
+	/** 自动手刹触发速度阈值（cm/s） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|制动",
+		meta = (DisplayName = "自动手刹速度阈值", EditCondition = "bAutoHandbrakeEnabled", ClampMin = "0")
+	)
+	float AutoHandbrakeVelocityThreshold = 10.0f;
+
+	/** 是否启用 ABS（防抱死：制动打滑时削减制动力到附着极限内） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|辅助",
+		meta = (DisplayName = "启用ABS")
+	)
+	bool bABSEnabled = true;
+
+	/** 是否启用牵引力控制（驱动打滑时削减驱动力到附着极限内） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|辅助",
+		meta = (DisplayName = "启用牵引力控制")
+	)
+	bool bTractionControlEnabled = true;
+
+	/** 轮胎合力作用点偏移（车轮模块局部坐标，轮位安装几何而非轮胎属性） */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "引力奇点立轴组件|几何",
+		meta = (DisplayName = "力偏移")
+	)
+	FVector ForceOffset = FVector::ZeroVector;
+
 #pragma endregion
 
 #pragma region Constructors
@@ -218,15 +291,25 @@ public:
 
 #pragma endregion
 
+private:
+	/**
+	 * 构建物理线程侧转向动力学设置（BuildSlotConfig 的内部步骤，含车速敏感曲线烘培）。
+	 *
+	 * @param InitialSteeringAngleDegrees 转向角初值（度），取槽位当前车轮的缓存转向角
+	 * @return 物理线程侧转向设置
+	 */
+	FSingularisMorphWheelSteeringSettings BuildSteeringSettings(float InitialSteeringAngleDegrees) const;
+
+public:
 #pragma region 槽位配置
 
 	/**
-	 * 构建物理线程侧转向动力学设置（含车速敏感曲线烘培）。
+	 * 构建物理线程侧立轴槽位配置（唯一建树期注入源，含转向设置烘培与扭矩单位换算）。
 	 *
 	 * @param InitialSteeringAngleDegrees 转向角初值（度），取槽位当前车轮的缓存转向角
-	 * @return 物理线程侧转向设置，供车轮模块建树期注入
+	 * @return 物理线程侧槽位配置，供车轮模块建树期注入（见 ApplyUprightSlotConfig）
 	 */
-	FSingularisMorphWheelSteeringSettings BuildSteeringSettings(float InitialSteeringAngleDegrees) const;
+	FSingularisMorphUprightSlotConfig BuildSlotConfig(float InitialSteeringAngleDegrees) const;
 
 #pragma endregion
 };

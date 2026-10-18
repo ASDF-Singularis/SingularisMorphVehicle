@@ -60,22 +60,27 @@ void FSingularisMorphWheelSimModule::Simulate(
 	LastLateralForce = Setup().Axis == Chaos::EWheelAxis::X ? FrictionForce.Y : FrictionForce.X;
 }
 
-void FSingularisMorphWheelSimModule::ApplyUprightSlotConfig(
-	const FSingularisMorphWheelSteeringSettings& InSteeringSettings,
-	const Chaos::EWheelAxis InAxis,
-	const bool bInReverseDirection
-)
+void FSingularisMorphWheelSimModule::ApplyUprightSlotConfig(const FSingularisMorphUprightSlotConfig& InSlotConfig)
 {
-	SteeringSettings = InSteeringSettings;
-	CurrentSteeringAngleDegrees = InSteeringSettings.InitialSteeringAngle;
+	SteeringSettings = InSlotConfig.SteeringSettings;
+	CurrentSteeringAngleDegrees = InSlotConfig.SteeringSettings.InitialSteeringAngle;
 
 	// 核心设置与转向设置保持一致：核心路径按「输入 × 最大转角」求转向角，
-	// 转向动力学按归一化值写回输入，两者共用同一最大转角才能严格互逆
+	// 转向动力学按归一化值写回输入，两者共用同一最大转角才能严格互逆；
+	// 制动/辅助/力偏移同样由核心物理路径从设置本体读取，必须一次性写入
 	Chaos::FWheelSettings& Settings = AccessSetup();
-	Settings.Axis = InAxis;
-	Settings.ReverseDirection = bInReverseDirection;
-	Settings.SteeringEnabled = InSteeringSettings.bEnabled;
-	Settings.MaxSteeringAngle = InSteeringSettings.MaxSteeringAngle;
+	Settings.Axis = InSlotConfig.Axis;
+	Settings.ReverseDirection = InSlotConfig.bReverseDirection;
+	Settings.SteeringEnabled = InSlotConfig.SteeringSettings.bEnabled;
+	Settings.MaxSteeringAngle = InSlotConfig.SteeringSettings.MaxSteeringAngle;
+	Settings.ABSEnabled = InSlotConfig.bABSEnabled;
+	Settings.TractionControlEnabled = InSlotConfig.bTractionControlEnabled;
+	Settings.MaxBrakeTorque = InSlotConfig.MaxBrakeTorque;
+	Settings.HandbrakeEnabled = InSlotConfig.bHandbrakeEnabled;
+	Settings.HandbrakeTorque = InSlotConfig.HandbrakeTorque;
+	Settings.AutoHandbrakeEnabled = InSlotConfig.bAutoHandbrakeEnabled;
+	Settings.AutoHandbrakeVelocityThreshold = InSlotConfig.AutoHandbrakeVelocityThreshold;
+	Settings.ForceOffset = InSlotConfig.ForceOffset;
 }
 
 float FSingularisMorphWheelSimModule::ComputeTargetSteeringAngle(const Chaos::FAllInputs& Inputs) const

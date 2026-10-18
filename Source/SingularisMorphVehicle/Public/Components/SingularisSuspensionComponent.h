@@ -33,7 +33,7 @@ public:
 	)
 	FVector SuspensionAxis = FVector(0, 0, -1);
 
-	/** 悬挂最大抬起距离（厘米） */
+	/** 悬挂最大抬起距离（cm） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -42,7 +42,7 @@ public:
 	)
 	float SuspensionMaxRaise = 10.0f;
 
-	/** 悬挂最大下压距离（厘米） */
+	/** 悬挂最大下压距离（cm） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

@@ -28,7 +28,7 @@ class SINGULARISMORPHVEHICLE_API USingularisMotorComponent : public USingularisM
 public:
 #pragma region Parameter
 
-	/** 峰值扭矩（牛顿·米） */
+	/** 峰值扭矩（N·m） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

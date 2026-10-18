@@ -1174,8 +1174,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		// 不自带动画而不会在 CreateNewCoreModule 中同步该标志，此处统一同步
 		CoreModule->SetAnimationEnabled(SUComp->GetAnimationEnabled());
 
-		// 挂载立轴槽位的车轮：注入槽位配置（转向/轴向/反转）。
-		// 轴向与反转由核心物理路径从模块设置读取，注入必须在入树前一次性完成
+		// 挂载立轴槽位的车轮：注入槽位配置（转向/轴向/反转/制动/辅助/力偏移）。
+		// 各项均由核心物理路径从模块设置读取，注入必须在入树前一次性完成
 		if (Entry.MatchedUpright)
 			SUComp->ApplySlotConfig(CoreModule, Entry.MatchedUpright);
 

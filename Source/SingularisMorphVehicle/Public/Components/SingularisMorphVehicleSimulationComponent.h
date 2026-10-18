@@ -332,12 +332,12 @@ public:
 	)
 	float SlipStopAngleThreshold = 3.0f;
 
-	/** 触底判定容差（厘米）：悬挂压缩量达到 最大上升减容差 时视为触底 */
+	/** 触底判定容差（cm）：悬挂压缩量达到 最大上升减容差 时视为触底 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点变型载具仿真组件|事件判定",
-		meta = (DisplayName = "触底判定容差(厘米)", ClampMin = "0.0", UIMin = "0.0")
+		meta = (DisplayName = "触底判定容差(cm)", ClampMin = "0.0", UIMin = "0.0")
 	)
 	float SuspensionBottomOutTolerance = 0.5f;
 
@@ -904,7 +904,7 @@ public:
 	)
 	float GetEngineMaxRPM() const;
 
-	/** 获取车速（公里/小时） */
+	/** 获取车速（km/h） */
 	UFUNCTION(
 		BlueprintPure,
 		Category = "引力奇点变型载具仿真组件|State",

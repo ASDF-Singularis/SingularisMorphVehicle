@@ -33,14 +33,14 @@ struct FSingularisMorphWheelSteeringSettings
 	/** 角度比例（AngleRatio 用）：内侧轮 = 参考角 / AngleRatio，取值 (0, 1] */
 	float AngleRatio = 0.7f;
 
-	/** 轴距（厘米，Ackermann 用） */
+	/** 轴距（cm，Ackermann 用） */
 	float WheelBase = 280.0f;
 
-	/** 轮距（厘米，Ackermann 用） */
+	/** 轮距（cm，Ackermann 用） */
 	float TrackWidth = 160.0f;
 
 	/**
-	 * 轮胎回正效应增益（度/(牛顿·秒)），0 表示关闭。
+	 * 轮胎回正效应增益（度/(N·s)），0 表示关闭。
 	 *
 	 * 开启后以轮胎侧向力大小为比例持续削减转向角幅值，使稳态转角小于目标角
 	 * （需驾驶员持续输入转向力矩以维持转角），并在附着突变时产生转向反馈。
@@ -52,6 +52,51 @@ struct FSingularisMorphWheelSteeringSettings
 
 	/** 速度敏感曲线：X 为轮心相对地面的前进速度（km/h，静止地面时即车速），Y 为转向倍率；为空时不随速度衰减 */
 	Chaos::FGraph SpeedSteeringCurve;
+};
+
+/**
+ * 引力奇点立轴槽位配置（物理线程端）。
+ *
+ * 汇总立轴槽位持有的全部轮位配置：转向动力学、轴向与反转方向、制动系统
+ * （行车制动、手刹、自动手刹）与辅助系统（ABS、牵引力控制）及轮胎合力作用点偏移。
+ * 制动器与辅助系统安装于轮位而非轮胎本体，力偏移是轮位安装几何，均随槽位注入；
+ * 轮胎本体仅保留随轮胎更换而变化的几何、惯性与摩擦属性。
+ * 扭矩由游戏线程侧经 TorqueMToCm 完成 N·m → kg·cm²/s² 换算，与车轮模块的单位制一致。
+ */
+struct FSingularisMorphUprightSlotConfig
+{
+	/** 转向动力学设置（含转向角初值，供槽位换胎后延续转向状态） */
+	FSingularisMorphWheelSteeringSettings SteeringSettings;
+
+	/** 滚动轴类型 */
+	Chaos::EWheelAxis Axis = Chaos::EWheelAxis::X;
+
+	/** 是否反转滚动方向 */
+	bool bReverseDirection = false;
+
+	/** 最大行车制动扭矩（kg·cm²/s²） */
+	float MaxBrakeTorque = 0.0f;
+
+	/** 是否启用手刹 */
+	bool bHandbrakeEnabled = false;
+
+	/** 手刹扭矩（kg·cm²/s²） */
+	float HandbrakeTorque = 0.0f;
+
+	/** 是否启用自动手刹 */
+	bool bAutoHandbrakeEnabled = false;
+
+	/** 自动手刹触发速度阈值（cm/s） */
+	float AutoHandbrakeVelocityThreshold = 0.0f;
+
+	/** 是否启用 ABS */
+	bool bABSEnabled = false;
+
+	/** 是否启用牵引力控制 */
+	bool bTractionControlEnabled = false;
+
+	/** 轮胎合力作用点偏移（车轮模块局部坐标） */
+	FVector ForceOffset = FVector::ZeroVector;
 };
 
 /**
@@ -89,15 +134,11 @@ public:
 	/**
 	 * 应用立轴槽位配置（建树期注入，模块入树前调用）。
 	 *
-	 * 轴向与反转方向由核心物理路径（速度轴交换、摩擦力轴映射、动画旋转轴）
-	 * 从模块设置读取，无法按帧从父模块查询，必须在此一次性写入设置本体；
-	 * 转向设置整体替换（含转向角初值，供槽位换胎后延续转向状态）。
+	 * 轴向、反转、制动/辅助与力偏移均由核心物理路径（速度轴交换、摩擦力轴映射、
+	 * 制动与打滑削减、动画旋转轴）从模块设置读取，无法按帧从父模块查询，必须在此
+	 * 一次性写入设置本体；转向设置整体替换（含转向角初值，供槽位换胎后延续转向状态）。
 	 */
-	void ApplyUprightSlotConfig(
-		const FSingularisMorphWheelSteeringSettings& InSteeringSettings,
-		const Chaos::EWheelAxis InAxis,
-		const bool bInReverseDirection
-	);
+	void ApplyUprightSlotConfig(const FSingularisMorphUprightSlotConfig& InSlotConfig);
 
 private:
 	/** 计算本帧的目标转向角（含车速衰减与内外轮几何修正） */
@@ -117,6 +158,6 @@ private:
 	/** 实际转向角（度），转向动力学的积分状态 */
 	float CurrentSteeringAngleDegrees = 0.0f;
 
-	/** 上一物理步的轮胎侧向力（牛顿），供回正力矩使用 */
+	/** 上一物理步的轮胎侧向力（N），供回正力矩使用 */
 	float LastLateralForce = 0.0f;
 };
