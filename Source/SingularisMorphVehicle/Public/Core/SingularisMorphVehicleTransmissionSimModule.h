@@ -13,7 +13,8 @@
  * 降挡后立即升挡等抖动；本模块在模拟前从模拟树向上解析原动机设置，
  * 以最大/怠速转速与相邻挡位齿比步长重算阈值，再交由官方状态机执行换挡。
  *
- * 无法解析原动机或转速区间不足时保留组件传入的手动阈值。
+ * 无法解析原动机时逐物理步重试；原动机最大转速无效时保留当前设置，
+ * 待原动机转速区间变化后重新计算。转速区间过小时仍按实际范围写入安全边界。
  *
  * 官方模块在空挡（齿比为 0）时跳过 TransmitTorque，直接扭矩子节点会保留上一挡的
  * DriveTorque；本模块在每步模拟前清零直接扭矩子节点，并在本步未传递有效扭矩时
@@ -69,13 +70,9 @@ private:
 
 	FSingularisMorphTransmissionShiftSettings ShiftSettings;
 
-	/** 组件传入的手动阈值；自动计算不可用时回退到该值，不受已写入的自动值影响 */
-	float ManualChangeUpRPM = 0.0f;
-	float ManualChangeDownRPM = 0.0f;
-
 	float CachedMaxRPM = -1.0f;
 	float CachedIdleRPM = -1.0f;
 
-	/** 是否已成功解析原动机并写入自动换挡点 */
+	/** 是否已成功按原动机转速区间写入自动换挡点 */
 	bool bShiftPointsResolved = false;
 };

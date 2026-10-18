@@ -5,14 +5,11 @@
 /**
  * 引力奇点变速箱自动换挡参数。
  *
- * 换挡点由原动机可用转速区间与相邻挡位齿比步长推导，不再依赖固定 RPM：
+ * 换挡点由原动机可用转速区间与相邻挡位齿比步长推导，不提供固定 RPM 配置：
  * 升挡点取可用转速带上部的比例，降挡点受「降挡后转速不得超过升挡点」约束。
  */
 struct SINGULARISMORPHVEHICLE_API FSingularisMorphTransmissionShiftSettings
 {
-	/** 是否根据原动机实际转速自动计算换挡点 */
-	bool bAutoCalculateShiftPoints = true;
-
 	/** 升挡转速占原动机可用转速带（怠速 → 最大转速）的比例，取值 [0.1, 1.0] */
 	float ShiftUpRPMRatio = 0.9f;
 
@@ -29,7 +26,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphTransmissionShiftPoints
 	/** 降挡转速（RPM） */
 	float ChangeDownRPM = 0.0f;
 
-	/** 是否按原动机转速区间完成自动计算；false 表示使用了回退阈值 */
+	/** 是否完成计算；false 表示原动机转速区间无效（非有限或最大转速为 0），调用方应保留现有阈值 */
 	bool bAutoCalculated = false;
 };
 
@@ -51,18 +48,14 @@ public:
 	 * @param ReverseRatios 倒挡齿比（低挡 → 高挡）
 	 * @param MaxRPM 原动机最大转速
 	 * @param IdleRPM 原动机怠速转速
-	 * @param ManualChangeUpRPM 自动计算不可用时的升挡回退值
-	 * @param ManualChangeDownRPM 自动计算不可用时的降挡回退值
-	 * @return 可直接写入变速箱设置的换挡转速
+	 * @return 计算结果；bAutoCalculated 为 false 时输出值无效
 	 */
 	static FSingularisMorphTransmissionShiftPoints Calculate(
 		const FSingularisMorphTransmissionShiftSettings& ShiftSettings,
 		const TArray<float>& ForwardRatios,
 		const TArray<float>& ReverseRatios,
 		float MaxRPM,
-		float IdleRPM,
-		float ManualChangeUpRPM,
-		float ManualChangeDownRPM
+		float IdleRPM
 	);
 
 private:

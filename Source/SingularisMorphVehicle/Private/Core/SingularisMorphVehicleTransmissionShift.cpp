@@ -2,7 +2,7 @@
 
 namespace
 {
-	/** 自动计算所需的最小可用转速带（RPM）；低于该值无法划分有意义的升降挡区间 */
+	/** 可用转速带下限（RPM）；低于该值时退回安全边界（升挡=最大转速，降挡=怠速） */
 	constexpr auto MinUsableRPMBand = 100.0f;
 
 	/** 升挡转速比例下限：避免升挡点贴近怠速导致换挡点重叠 */
@@ -20,32 +20,27 @@ FSingularisMorphTransmissionShiftPoints FSingularisMorphTransmissionShiftCalcula
 	const TArray<float>& ForwardRatios,
 	const TArray<float>& ReverseRatios,
 	const float MaxRPM,
-	const float IdleRPM,
-	const float ManualChangeUpRPM,
-	const float ManualChangeDownRPM
+	const float IdleRPM
 )
 {
 	FSingularisMorphTransmissionShiftPoints Points;
-	Points.ChangeUpRPM = FMath::Max(ManualChangeUpRPM, 0.0f);
-	Points.ChangeDownRPM = FMath::Max(ManualChangeDownRPM, 0.0f);
 
-	// 1) 手动模式或输入不可信时保留调用方提供的回退阈值
-	if (!ShiftSettings.bAutoCalculateShiftPoints)
-		return Points;
-
+	// 1) 原动机转速区间不可信时返回失败，由调用方保留现有阈值
 	if (!FMath::IsFinite(MaxRPM) || !FMath::IsFinite(IdleRPM))
 		return Points;
 
-	// 2) 归一化转速区间；怠速被钳制在最大转速内，区间不足则无法自动划分换挡点
+	// 2) 归一化转速区间；怠速被钳制在最大转速内
 	const float ClampedMaxRPM = FMath::Max(MaxRPM, 0.0f);
 	const float ClampedIdleRPM = FMath::Clamp(IdleRPM, 0.0f, ClampedMaxRPM);
 	const float UsableBand = ClampedMaxRPM - ClampedIdleRPM;
 
+	// 区间不足以划分有意义的手感时，仍按实际转速范围给出安全边界，
+	// 避免沿用高于原动机最大转速的固定阈值而导致永不换挡
 	if (UsableBand <= MinUsableRPMBand)
 	{
-		// 区间不可用时仍把手动阈值钳制到原动机可达范围，避免阈值高于最大转速而永不换挡
-		Points.ChangeUpRPM = FMath::Clamp(Points.ChangeUpRPM, ClampedIdleRPM, ClampedMaxRPM);
-		Points.ChangeDownRPM = FMath::Clamp(Points.ChangeDownRPM, ClampedIdleRPM, Points.ChangeUpRPM);
+		Points.ChangeUpRPM = ClampedMaxRPM;
+		Points.ChangeDownRPM = ClampedIdleRPM;
+		Points.bAutoCalculated = ClampedMaxRPM > KINDA_SMALL_NUMBER;
 		return Points;
 	}
 
@@ -59,7 +54,7 @@ FSingularisMorphTransmissionShiftPoints FSingularisMorphTransmissionShiftCalcula
 
 	// 4) 降挡点必须保证降挡后的转速仍低于升挡点：
 	//    降挡后转速 = 降挡点 × (低挡齿比 / 高挡齿比)，故按前进/倒挡中的最大齿比步长
-	//    压低降挡比例，再与调用方给出的比例上限取较小值
+	//    压低降挡比例，再与配置的比例上限取较小值
 	const float MaxGearStep = FMath::Max(
 		CalculateMaxGearStep(ForwardRatios),
 		CalculateMaxGearStep(ReverseRatios)

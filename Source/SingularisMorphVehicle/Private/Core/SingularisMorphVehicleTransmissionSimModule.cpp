@@ -30,9 +30,7 @@ FSingularisMorphTransmissionSimModule::FSingularisMorphTransmissionSimModule(
 	const FSingularisMorphTransmissionShiftSettings& InShiftSettings
 )
 	: FTransmissionSimModule(Settings),
-	  ShiftSettings(InShiftSettings),
-	  ManualChangeUpRPM(static_cast<float>(Settings.ChangeUpRPM)),
-	  ManualChangeDownRPM(static_cast<float>(Settings.ChangeDownRPM))
+	  ShiftSettings(InShiftSettings)
 {
 	// 追加派生标记类型，供本插件按派生类识别；随后重新写入基类类型名，
 	// 使 GetSimType() 保持 FTransmissionSimModule（网络工厂按该名称生成哈希）
@@ -151,7 +149,9 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 bool FSingularisMorphTransmissionSimModule::GetDebugString(FString& StringOut) const
 {
 	const bool bResult = FTransmissionSimModule::GetDebugString(StringOut);
-	const TCHAR* ShiftMode = bShiftPointsResolved ? TEXT("auto") : TEXT("manual");
+	const TCHAR* ShiftMode = Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType
+		                        ? TEXT("manual")
+		                        : (bShiftPointsResolved ? TEXT("auto") : TEXT("unresolved"));
 
 	StringOut += FString::Printf(
 		TEXT(", ShiftUp %d RPM, ShiftDown %d RPM (%s)"),
@@ -167,9 +167,6 @@ void FSingularisMorphTransmissionSimModule::UpdateShiftPoints(
 	const Chaos::FSimModuleTree& VehicleModuleSystem
 )
 {
-	if (!ShiftSettings.bAutoCalculateShiftPoints)
-		return;
-
 	// 手动变速箱不使用 RPM 阈值，跳过无效计算
 	if (Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType)
 		return;
@@ -209,45 +206,32 @@ void FSingularisMorphTransmissionSimModule::UpdateShiftPoints(
 			Setup().ForwardRatios,
 			Setup().ReverseRatios,
 			MaxRPM,
-			IdleRPM,
-			ManualChangeUpRPM,
-			ManualChangeDownRPM
+			IdleRPM
 		);
 
-	// 3) 写回官方设置；无法自动计算时 Calculate 会返回原手动阈值
+	// 3) 原动机转速区间无效时保留当前设置；转速区间变化后重新计算
+	if (!Points.bAutoCalculated)
+	{
+		bShiftPointsResolved = false;
+		return;
+	}
+
 	Chaos::FTransmissionSettings& Settings = AccessSetup();
 	Settings.ChangeUpRPM = ToRPMValue(Points.ChangeUpRPM);
 	Settings.ChangeDownRPM = ToRPMValue(Points.ChangeDownRPM);
-	bShiftPointsResolved = Points.bAutoCalculated;
+	bShiftPointsResolved = true;
 
-	if (Points.bAutoCalculated)
-	{
-		UE_LOG(
-			LogSingularisMorphVehicle,
-			Verbose,
-			TEXT(
-				"[Transmission] Auto shift points updated: up=%.0f RPM, down=%.0f RPM (prime mover max=%.0f RPM, idle=%.0f RPM)"
-			),
-			Points.ChangeUpRPM,
-			Points.ChangeDownRPM,
-			MaxRPM,
-			IdleRPM
-		);
-	}
-	else
-	{
-		UE_LOG(
-			LogSingularisMorphVehicle,
-			Verbose,
-			TEXT(
-				"[Transmission] Auto shift points unavailable; manual fallback: up=%.0f RPM, down=%.0f RPM (prime mover max=%.0f RPM, idle=%.0f RPM)"
-			),
-			Points.ChangeUpRPM,
-			Points.ChangeDownRPM,
-			MaxRPM,
-			IdleRPM
-		);
-	}
+	UE_LOG(
+		LogSingularisMorphVehicle,
+		Verbose,
+		TEXT(
+			"[Transmission] Auto shift points updated: up=%.0f RPM, down=%.0f RPM (prime mover max=%.0f RPM, idle=%.0f RPM)"
+		),
+		Points.ChangeUpRPM,
+		Points.ChangeDownRPM,
+		MaxRPM,
+		IdleRPM
+	);
 }
 
 const Chaos::ISimulationModuleBase* FSingularisMorphTransmissionSimModule::FindPrimeMover(

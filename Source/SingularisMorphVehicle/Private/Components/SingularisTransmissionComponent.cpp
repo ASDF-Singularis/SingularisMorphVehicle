@@ -34,9 +34,6 @@ Chaos::ISimulationModuleBase* USingularisTransmissionComponent::CreateNewCoreMod
 	// 1) 配置变速箱设置
 	Chaos::FTransmissionSettings Settings;
 
-	const int32 ClampedChangeUpRPM = FMath::Max(ChangeUpRPM, 0);
-	const int32 ClampedChangeDownRPM = FMath::Max(ChangeDownRPM, 0);
-
 	// 非有限齿比会在扭矩与转速耦合中传播为 NaN，按空挡（齿比 0）处理
 	Settings.ForwardRatios = ForwardRatios;
 	for (float& Ratio : Settings.ForwardRatios)
@@ -53,8 +50,9 @@ Chaos::ISimulationModuleBase* USingularisTransmissionComponent::CreateNewCoreMod
 	}
 
 	Settings.FinalDriveRatio = FMath::IsFinite(FinalDriveRatio) ? FinalDriveRatio : 0.0f;
-	Settings.ChangeUpRPM = static_cast<uint32>(ClampedChangeUpRPM);
-	Settings.ChangeDownRPM = static_cast<uint32>(ClampedChangeDownRPM);
+
+	// ChangeUpRPM/ChangeDownRPM 由仿真模块在首次模拟时按原动机转速区间自动写入；
+	// 此处保留官方默认值，仅作为原动机尚未挂入动力链时的临时阈值
 	Settings.GearChangeTime = FMath::IsFinite(GearChangeTime) ? FMath::Max(GearChangeTime, 0.0f) : 0.0f;
 	Settings.GearHysteresisTime = FMath::IsFinite(GearHysteresisTime)
 		                              ? FMath::Max(GearHysteresisTime, 0.0f)
@@ -84,28 +82,12 @@ Chaos::ISimulationModuleBase* USingularisTransmissionComponent::CreateNewCoreMod
 		);
 	}
 
-	// 2) 手动模式下升降挡点倒置会让自动换挡在相邻挡位间往复，提前告警
-	if (!bAutoCalculateShiftPoints && ClampedChangeUpRPM <= ClampedChangeDownRPM)
-	{
-		UE_LOG(
-			LogSingularisMorphVehicle,
-			Warning,
-			TEXT(
-				"[Transmission] %s: ChangeUpRPM (%d) must be greater than ChangeDownRPM (%d) when automatic shift point calculation is disabled"
-			),
-			*GetName(),
-			ClampedChangeUpRPM,
-			ClampedChangeDownRPM
-		);
-	}
-
-	// 3) 自动换挡参数；实际阈值由仿真模块在模拟线程按动力链中的原动机校准
+	// 2) 自动换挡参数；实际阈值由仿真模块在每个物理步按动力链中的原动机校准
 	FSingularisMorphTransmissionShiftSettings ShiftSettings;
-	ShiftSettings.bAutoCalculateShiftPoints = bAutoCalculateShiftPoints;
 	ShiftSettings.ShiftUpRPMRatio = ShiftUpRPMRatio;
 	ShiftSettings.ShiftDownRPMRatio = ShiftDownRPMRatio;
 
-	// 4) 创建变速箱仿真模块
+	// 3) 创建变速箱仿真模块
 	Chaos::ISimulationModuleBase* Transmission = new FSingularisMorphTransmissionSimModule(
 		Settings,
 		ShiftSettings
