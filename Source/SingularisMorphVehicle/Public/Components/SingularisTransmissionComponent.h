@@ -18,6 +18,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGearChange, int32, Guid, int32, 
  *
  * 管理前进/倒车齿轮比率与自动/手动换挡逻辑。
  * 通过齿轮比倍率将引擎扭矩传递至车轮驱动系统。
+ * 自动换挡点默认按原动机可用转速区间与相邻挡位齿比步长动态计算，
+ * 换装不同引擎后无需重新标定固定 RPM。
  */
 UCLASS(
 	Blueprintable,
@@ -59,21 +61,85 @@ public:
 	)
 	float FinalDriveRatio = 3.08f;
 
-	/** 升挡转速（RPM） */
+	/** 是否根据原动机实际转速自动计算换挡点（仅自动变速箱类型生效） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点变速箱组件|换挡",
-		meta = (DisplayName = "升挡 RPM")
+		meta = (DisplayName = "自动计算换挡点")
+	)
+	bool bAutoCalculateShiftPoints = true;
+
+	/** 升挡转速占原动机可用转速带（怠速 → 最大转速）的比例 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变速箱组件|换挡",
+		meta = (
+			DisplayName = "升挡转速比例",
+			ClampMin = "0.1",
+			ClampMax = "1.0",
+			UIMin = "0.1",
+			UIMax = "1.0",
+			EditCondition = "bAutoCalculateShiftPoints"
+		)
+	)
+	float ShiftUpRPMRatio = 0.9f;
+
+	/**
+	 * 降挡转速占升挡转速的比例上限
+	 *
+	 * 实际降挡点还会按相邻挡位齿比步长压低，确保降挡后的转速仍低于升挡点，
+	 * 避免降挡后立即触发升挡而在相邻挡位间往复摆动。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变速箱组件|换挡",
+		meta = (
+			DisplayName = "降挡转速比例",
+			ClampMin = "0.0",
+			ClampMax = "1.0",
+			UIMin = "0.0",
+			UIMax = "1.0",
+			EditCondition = "bAutoCalculateShiftPoints"
+		)
+	)
+	float ShiftDownRPMRatio = 0.55f;
+
+	/**
+	 * 升挡转速（RPM，手动回退值）
+	 *
+	 * 仅在关闭自动计算或模拟树中无法解析原动机时使用。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点变速箱组件|换挡",
+		meta = (
+			DisplayName = "升挡 RPM（手动回退）",
+			ClampMin = "0",
+			EditCondition = "bAutoCalculateShiftPoints == false"
+		)
 	)
 	int32 ChangeUpRPM = 4500;
 
-	/** 降挡转速（RPM） */
+	/**
+	 * 降挡转速（RPM，手动回退值）
+	 *
+	 * 仅在关闭自动计算或模拟树中无法解析原动机时使用。
+	 * 该值仅用于自动变速箱在同向挡位间降挡，不参与倒挡切换；
+	 * 进/倒挡方向由 AutoReverse 依据 Reverse 输入通道决定。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点变速箱组件|换挡",
-		meta = (DisplayName = "降挡 RPM")
+		meta = (
+			DisplayName = "降挡 RPM（手动回退）",
+			ClampMin = "0",
+			EditCondition = "bAutoCalculateShiftPoints == false"
+		)
 	)
 	int32 ChangeDownRPM = 1600;
 
@@ -113,7 +179,14 @@ public:
 	)
 	ESingularisMorphVehicleTransmissionType TransmissionType = ESingularisMorphVehicleTransmissionType::Automatic;
 
-	/** 是否自动倒挡 */
+	/**
+	 * 是否自动倒挡
+	 *
+	 * 启用后，按住 Reverse 输入通道时目标挡位切至倒挡，松开后回到前进挡。
+	 * 方向切换由输入直接驱动，与 ChangeUpRPM/ChangeDownRPM 的换挡阈值无关；
+	 * 换挡阈值只在同一方向内选择具体挡位。
+	 * 关闭后自动换挡逻辑不会跨越空挡进入倒挡，方向完全由挡位输入决定。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
