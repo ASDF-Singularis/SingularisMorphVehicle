@@ -490,12 +490,23 @@ private:
 	bool bHasGearData = false;
 
 	/**
-	 * 目标挡位请求（SetGearInput 写入，仅手动变速箱；Update 逐帧产出换挡脉冲直到挡位到达）。
+	 * 目标挡位请求（SetGearInput 写入，仅手动变速箱）。
 	 *
 	 * INDEX_NONE 表示无请求。变速箱一次只接受一挡（目标挡位 ±1），
-	 * 单次脉冲无法跨越多个挡位，故请求需跨多个换挡周期持续产出。
+	 * Update 按当前物理输出逐挡推进；已发出但尚未在输出中确认的脉冲
+	 * 记录在 PendingGearPulseTarget 中，避免异步输出滞后时重复发送。
 	 */
 	int32 TargetGearInput = INDEX_NONE;
+
+	/** 已发出但尚未在物理输出中确认的脉冲目标挡位；INDEX_NONE 表示无待确认脉冲 */
+	int32 PendingGearPulseTarget = INDEX_NONE;
+
+	/** 待确认脉冲的超时计时（秒）；超时后重新评估，避免指令被其它换挡逻辑覆盖后永久卡住 */
+	float PendingGearPulseTimeout = 0.0f;
+
+	/** 上一次脉冲所依据的异步输出时间戳与输出对象；同一输出帧不重复发脉冲 */
+	int32 LastGearPulseOutputTimestamp = INDEX_NONE;
+	const FSingularisMorphVehicleAsyncOutput* LastGearPulseOutput = nullptr;
 
 	/** 自动变速拒绝手动换挡请求的告警是否已发出（避免逐帧调用刷屏） */
 	bool bWarnedAutomaticGearInput = false;
@@ -555,6 +566,9 @@ private:
 
 	/** 下一帧异步输出（用于插值） */
 	const FSingularisMorphVehicleAsyncOutput* NextAsyncOutput = nullptr;
+
+	/** 最近一次异步输出的物理帧时间戳；换挡脉冲以新输出帧为推进节拍 */
+	int32 LatestAsyncOutputTimestamp = INDEX_NONE;
 
 	/** 异步输出插值系数 [0..1] */
 	float OutputInterpolationAlpha = 0.0f;

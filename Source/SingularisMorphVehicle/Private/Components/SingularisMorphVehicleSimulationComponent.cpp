@@ -251,6 +251,11 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	CurrentGear = 0;
 	bHasGearData = false;
 	TargetGearInput = INDEX_NONE;
+	PendingGearPulseTarget = INDEX_NONE;
+	PendingGearPulseTimeout = 0.0f;
+	LastGearPulseOutputTimestamp = INDEX_NONE;
+	LastGearPulseOutput = nullptr;
+	bWarnedAutomaticGearInput = false;
 	LastEngagedGear = 0;
 	bHasGearShiftBaseline = false;
 	SlippingWheelGuids.Empty();
@@ -263,6 +268,7 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	CurrentAsyncInput = nullptr;
 	CurrentAsyncOutput = nullptr;
 	NextAsyncOutput = nullptr;
+	LatestAsyncOutputTimestamp = INDEX_NONE;
 	OutputInterpolationAlpha = 0.0f;
 
 	// 6) 恢复全部被抑制的车轮碰撞：物理状态拆除（含对象池回收）后不得残留抑制状态
@@ -1662,45 +1668,93 @@ void USingularisMorphVehicleSimulationComponent::SetLocallyControlled(const bool
 		NetworkPhysicsComponent->SetIsRelayingLocalInputs(bIsLocallyControlled);
 }
 
-void USingularisMorphVehicleSimulationComponent::Update(const float /*DeltaTime*/)
+void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime)
 {
 	if (TargetGearInput == INDEX_NONE) return;
 
-	// 1) 控制决策读取最新物理输出，而非插值显示的 CurrentGear：
+	// 1) 换挡决策只读取最新物理输出，而非插值显示的 CurrentGear：
 	//    插值挡位固定取较旧输出帧的挡位，换挡期间会滞后；以它驱动脉冲会在变速箱
 	//    已进入空挡后再发一次，把目标挡位推过空挡（例如 1→N 被推成 -1）
+	const auto* DecisionOutput = NextAsyncOutput ? NextAsyncOutput : CurrentAsyncOutput;
 	const auto LatestGear = GetLatestTransmissionGear(
-		NextAsyncOutput ? NextAsyncOutput : CurrentAsyncOutput,
+		DecisionOutput,
 		CurrentAsyncDataType,
 		GuidToCoreModule
 	);
 
 	// 未收到变速箱输出时挡位未知：此时发脉冲会把变速箱的初始挡位误判为需升降挡
-	const auto bHasControlGear = LatestGear != INDEX_NONE || bHasGearData;
-	if (!bHasControlGear) return;
+	if (LatestGear == INDEX_NONE) return;
 
-	const auto ControlGear = LatestGear != INDEX_NONE ? LatestGear : CurrentGear;
-	if (ControlGear == TargetGearInput) return;
-
-	// 换挡进行中：变速箱以空挡（0）过渡，此时再发脉冲会把目标挡位继续推高
-	if (ControlGear == 0) return;
-
-	// 无变速箱模块时脉冲无处消费
-	auto bHasTransmission = false;
+	// 2) 解析变速箱模块：挡位上限、换挡时间与手动/自动类型均以模拟模块设置为准
+	const Chaos::FTransmissionSimModule* Transmission = nullptr;
 	for (const TPair<int32, Chaos::ISimulationModuleBase*>& Pair : GuidToCoreModule)
 	{
-		if (Pair.Value && Pair.Value->IsSimType<Chaos::FTransmissionSimModule>())
+		if (!Pair.Value || !Pair.Value->IsSimType<Chaos::FTransmissionSimModule>()) continue;
+
+		Transmission = Pair.Value->Cast<Chaos::FTransmissionSimModule>();
+		if (Transmission) break;
+	}
+	if (!Transmission) return;
+
+	if (Transmission->Setup().TransmissionType != Chaos::FTransmissionSettings::ETransType::ManualType)
+	{
+		PendingGearPulseTarget = INDEX_NONE;
+		PendingGearPulseTimeout = 0.0f;
+		return;
+	}
+
+	// 3) 物理输出未推进时不做重复决策：异步求解器可能暂停或落后于游戏线程，
+	//    同一份输出上反复发脉冲会把目标挡位推过空挡或目标挡
+	if (PendingGearPulseTarget != INDEX_NONE &&
+		DecisionOutput == LastGearPulseOutput &&
+		LatestAsyncOutputTimestamp == LastGearPulseOutputTimestamp)
+		return;
+
+	// 4) 待确认脉冲：输出到达待确认挡位即完成；超时后重新评估，
+	//    避免指令被 AutoReverse 等逻辑覆盖后永久等待
+	const auto SafeDeltaTime = FMath::IsFinite(DeltaTime) ? FMath::Max(DeltaTime, 0.0f) : 0.0f;
+
+	if (PendingGearPulseTarget != INDEX_NONE)
+	{
+		if (LatestGear == PendingGearPulseTarget)
 		{
-			bHasTransmission = true;
-			break;
+			PendingGearPulseTarget = INDEX_NONE;
+			PendingGearPulseTimeout = 0.0f;
+		}
+		else
+		{
+			PendingGearPulseTimeout -= SafeDeltaTime;
+			if (PendingGearPulseTimeout > 0.0f) return;
+
+			PendingGearPulseTarget = INDEX_NONE;
+			PendingGearPulseTimeout = 0.0f;
 		}
 	}
-	if (!bHasTransmission) return;
+
+	// 5) 已到达请求挡位
+	if (LatestGear == TargetGearInput) return;
+
+	// 6) 一次只推进一挡，并记录待确认目标：变速箱以空挡过渡，
+	//    输出确认前不再发送，避免 1→2 被推成 1→3、1→N 被推成 1→R
+	const auto MinGear = -Transmission->Setup().ReverseRatios.Num();
+	const auto MaxGear = Transmission->Setup().ForwardRatios.Num();
+	const auto Step = LatestGear < TargetGearInput ? 1 : -1;
+	const auto PulseTarget = FMath::Clamp(LatestGear + Step, MinGear, MaxGear);
+	if (PulseTarget == LatestGear) return;
+
+	const auto GearChangeTime = FMath::IsFinite(Transmission->Setup().GearChangeTime)
+		                            ? FMath::Max(Transmission->Setup().GearChangeTime, 0.0f)
+		                            : 0.0f;
 
 	SetInputBool(
-		ControlGear < TargetGearInput ? Chaos::ChangeUpControlName : Chaos::ChangeDownControlName,
+		Step > 0 ? Chaos::ChangeUpControlName : Chaos::ChangeDownControlName,
 		true
 	);
+
+	PendingGearPulseTarget = PulseTarget;
+	PendingGearPulseTimeout = FMath::Max(GearChangeTime * 2.0f + 0.5f, 0.5f);
+	LastGearPulseOutputTimestamp = LatestAsyncOutputTimestamp;
+	LastGearPulseOutput = DecisionOutput;
 }
 
 void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
@@ -1730,6 +1784,12 @@ void USingularisMorphVehicleSimulationComponent::SetCurrentAsyncData(
 	CurrentAsyncOutput = nullptr;
 	NextAsyncOutput = nullptr;
 	OutputInterpolationAlpha = 0.0f;
+
+	// 0) 记录最新输出的物理帧时间戳：换挡脉冲只在输出推进后继续决策，
+	//    异步求解器暂停时不会对同一份状态重复发送
+	LatestAsyncOutputTimestamp = NextOutput
+		? NextOutput->Timestamp
+		: (CurOutput ? CurOutput->Timestamp : INDEX_NONE);
 
 	// 1) 在管理器级别输出列表中查找本载具的输出
 	if (CurOutput)
