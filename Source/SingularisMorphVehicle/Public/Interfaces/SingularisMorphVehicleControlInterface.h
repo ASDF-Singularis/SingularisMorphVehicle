@@ -45,7 +45,7 @@ class AActor;
  * 观察者只依赖本接口，不依赖具体控制组件类型。
  */
 UINTERFACE(Blueprintable, BlueprintType)
-class USingularisMorphVehicleControlInterface : public UInterface
+class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleControlInterface : public UInterface
 {
 	GENERATED_BODY()
 };

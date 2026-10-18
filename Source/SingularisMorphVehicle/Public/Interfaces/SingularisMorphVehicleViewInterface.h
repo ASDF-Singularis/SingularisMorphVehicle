@@ -45,7 +45,7 @@ class USingularisMorphVehicleSimulationComponent;
  * 由载具控件组件经 Execute_ 调用。实现者不限于控件——任意 UObject 实现本接口即可接入驱动。
  */
 UINTERFACE(Blueprintable, BlueprintType)
-class USingularisMorphVehicleViewInterface : public UInterface
+class SINGULARISMORPHVEHICLE_API USingularisMorphVehicleViewInterface : public UInterface
 {
 	GENERATED_BODY()
 };
