@@ -1,7 +1,6 @@
 #pragma once
 
 #include <CoreMinimal.h>
-
 #include <SimModule/TransmissionModule.h>
 
 #include "Core/SingularisMorphVehicleTransmissionShift.h"
@@ -39,7 +38,7 @@ private:
 	void UpdateShiftPoints(const Chaos::FSimModuleTree& VehicleModuleSystem);
 
 	/** 沿父链查找原动机（引擎或电机） */
-	const Chaos::ISimulationModuleBase* FindPrimeMover(
+	const ISimulationModuleBase* FindPrimeMover(
 		const Chaos::FSimModuleTree& VehicleModuleSystem
 	) const;
 

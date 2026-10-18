@@ -3,16 +3,16 @@
 namespace
 {
 	/** 自动计算所需的最小可用转速带（RPM）；低于该值无法划分有意义的升降挡区间 */
-	constexpr float MinUsableRPMBand = 100.0f;
+	constexpr auto MinUsableRPMBand = 100.0f;
 
 	/** 升挡转速比例下限：避免升挡点贴近怠速导致换挡点重叠 */
-	constexpr float MinShiftUpRPMRatio = 0.1f;
+	constexpr auto MinShiftUpRPMRatio = 0.1f;
 
 	/** 降挡后转速相对升挡点的安全余量（降挡后转速不高于升挡点的 90%） */
-	constexpr float DownshiftSafetyFactor = 0.9f;
+	constexpr auto DownshiftSafetyFactor = 0.9f;
 
 	/** 升降挡点之间的最小间隔比例（相对可用转速带） */
-	constexpr float MinShiftHysteresisRatio = 0.05f;
+	constexpr auto MinShiftHysteresisRatio = 0.05f;
 }
 
 FSingularisMorphTransmissionShiftPoints FSingularisMorphTransmissionShiftCalculator::Calculate(

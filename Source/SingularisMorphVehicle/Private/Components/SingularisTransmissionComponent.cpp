@@ -2,8 +2,8 @@
 
 #include <SimModule/SimModulesInclude.h>
 
-#include "Core/SingularisMorphVehicleTransmissionSimModule.h"
 #include "SingularisMorphVehicle.h"
+#include "Core/SingularisMorphVehicleTransmissionSimModule.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(SingularisTransmissionComponent)
 

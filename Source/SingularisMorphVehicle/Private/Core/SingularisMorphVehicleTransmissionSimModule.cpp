@@ -9,7 +9,7 @@
 namespace
 {
 	/** 父链遍历深度上限，避免损坏的树索引造成死循环 */
-	constexpr int32 MaxPrimeMoverSearchDepth = 32;
+	constexpr auto MaxPrimeMoverSearchDepth = 32;
 
 	/** 将浮点 RPM 写入 uint32 设置前的安全转换 */
 	uint32 ToRPMValue(const float RPM)
@@ -26,12 +26,10 @@ FSingularisMorphTransmissionSimModule::FSingularisMorphTransmissionSimModule(
 	const Chaos::FTransmissionSettings& Settings,
 	const FSingularisMorphTransmissionShiftSettings& InShiftSettings
 )
-	: FTransmissionSimModule(Settings)
-	, ShiftSettings(InShiftSettings)
-	, ManualChangeUpRPM(static_cast<float>(Settings.ChangeUpRPM))
-	, ManualChangeDownRPM(static_cast<float>(Settings.ChangeDownRPM))
-{
-}
+	: FTransmissionSimModule(Settings),
+	  ShiftSettings(InShiftSettings),
+	  ManualChangeUpRPM(static_cast<float>(Settings.ChangeUpRPM)),
+	  ManualChangeDownRPM(static_cast<float>(Settings.ChangeDownRPM)) {}
 
 void FSingularisMorphTransmissionSimModule::Simulate(
 	const float DeltaTime,
@@ -73,7 +71,7 @@ void FSingularisMorphTransmissionSimModule::UpdateShiftPoints(
 		return;
 
 	// 1) 解析原动机转速区间；尚未挂入动力链时保留当前阈值，下一帧重试
-	const Chaos::ISimulationModuleBase* PrimeMover = FindPrimeMover(VehicleModuleSystem);
+	const ISimulationModuleBase* PrimeMover = FindPrimeMover(VehicleModuleSystem);
 	if (!PrimeMover)
 		return;
 
@@ -86,9 +84,7 @@ void FSingularisMorphTransmissionSimModule::UpdateShiftPoints(
 		IdleRPM = Engine->Setup().IdleRPM;
 	}
 	else if (const Chaos::FMotorSimModule* Motor = PrimeMover->Cast<Chaos::FMotorSimModule>())
-	{
 		MaxRPM = Motor->Setup().MaxRPM;
-	}
 	else
 		return;
 
@@ -163,7 +159,7 @@ const Chaos::ISimulationModuleBase* FSingularisMorphTransmissionSimModule::FindP
 		if (Index < 0 || !VehicleModuleSystem.IsValidNode(Index))
 			return nullptr;
 
-		const Chaos::ISimulationModuleBase* Module = VehicleModuleSystem.AccessSimModule(Index);
+		const ISimulationModuleBase* Module = VehicleModuleSystem.AccessSimModule(Index);
 		if (!Module)
 			return nullptr;
 
