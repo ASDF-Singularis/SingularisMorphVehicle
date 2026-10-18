@@ -1788,8 +1788,10 @@ void USingularisMorphVehicleSimulationComponent::SetCurrentAsyncData(
 	// 0) 记录最新输出的物理帧时间戳：换挡脉冲只在输出推进后继续决策，
 	//    异步求解器暂停时不会对同一份状态重复发送
 	LatestAsyncOutputTimestamp = NextOutput
-		? NextOutput->Timestamp
-		: (CurOutput ? CurOutput->Timestamp : INDEX_NONE);
+		                             ? NextOutput->Timestamp
+		                             : CurOutput
+		                             ? CurOutput->Timestamp
+		                             : INDEX_NONE;
 
 	// 1) 在管理器级别输出列表中查找本载具的输出
 	if (CurOutput)

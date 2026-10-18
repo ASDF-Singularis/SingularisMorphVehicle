@@ -150,8 +150,10 @@ bool FSingularisMorphTransmissionSimModule::GetDebugString(FString& StringOut) c
 {
 	const bool bResult = FTransmissionSimModule::GetDebugString(StringOut);
 	const TCHAR* ShiftMode = Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType
-		                        ? TEXT("manual")
-		                        : (bShiftPointsResolved ? TEXT("auto") : TEXT("unresolved"));
+		                         ? TEXT("manual")
+		                         : bShiftPointsResolved
+		                         ? TEXT("auto")
+		                         : TEXT("unresolved");
 
 	StringOut += FString::Printf(
 		TEXT(", ShiftUp %d RPM, ShiftDown %d RPM (%s)"),
