@@ -15,6 +15,10 @@
  *
  * 无法解析原动机或转速区间不足时保留组件传入的手动阈值。
  *
+ * 官方模块在空挡（齿比为 0）时跳过 TransmitTorque，直接扭矩子节点会保留上一挡的
+ * DriveTorque；本模块在每步模拟前清零直接扭矩子节点，并在本步未传递有效扭矩时
+ * 递归清零下游残留，避免空挡持续加速与倒挡反向失控。
+ *
  * 不声明新的模拟类型名：输出/网络数据与工厂均以 FTransmissionSimModule 类型识别该模块。
  */
 class SINGULARISMORPHVEHICLE_API FSingularisMorphTransmissionSimModule : public Chaos::FTransmissionSimModule
@@ -41,6 +45,13 @@ private:
 	const ISimulationModuleBase* FindPrimeMover(
 		const Chaos::FSimModuleTree& VehicleModuleSystem
 	) const;
+
+	/** 递归清除下游残留驱动力矩（空挡/零扭矩时调用） */
+	void ClearDownstreamDriveTorque(
+		const Chaos::FSimModuleTree& VehicleModuleSystem,
+		int32 ParentIndex,
+		int32 Depth
+	);
 
 	FSingularisMorphTransmissionShiftSettings ShiftSettings;
 

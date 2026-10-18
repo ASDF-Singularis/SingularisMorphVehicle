@@ -90,6 +90,36 @@ namespace
 			Component.SetCollisionResponseToChannel(Channel, Responses.GetResponse(Channel));
 		}
 	}
+
+	/**
+	 * 从最新异步输出读取变速箱当前挡位。
+	 *
+	 * 游戏线程用于插值显示的 CurrentGear 来自较旧的输出帧（FTransmissionOutputData::Lerp
+	 * 固定取 InCurrent 的挡位），不能用于换挡脉冲决策；否则换挡进行中仍会读到旧挡位，
+	 * 重复脉冲会把目标挡位推过空挡（例如 1→N 被推成 -1）。
+	 */
+	int32 GetLatestTransmissionGear(
+		const FSingularisMorphVehicleAsyncOutput* Output,
+		const ESingularisMorphChaosAsyncVehicleDataType DataType,
+		const TMap<int32, Chaos::ISimulationModuleBase*>& GuidToCoreModule
+	)
+	{
+		if (!Output || !Output->bValid || Output->Type != DataType) return INDEX_NONE;
+
+		int32 Gear = INDEX_NONE;
+
+		for (const Chaos::FSimOutputData* ModuleOutput : Output->VehicleSimOutput.SimTreeOutputData)
+		{
+			if (!ModuleOutput || !ModuleOutput->IsSimType<Chaos::FTransmissionSimModule>()) continue;
+
+			// 拓扑变更帧的在飞输出可能仍描述已移除的模块，忽略未纳管的 GUID
+			if (!GuidToCoreModule.Contains(ModuleOutput->ModuleGuid)) continue;
+
+			Gear = static_cast<const Chaos::FTransmissionOutputData*>(ModuleOutput)->CurrentGear;
+		}
+
+		return Gear;
+	}
 }
 
 USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationComponent()
@@ -1609,11 +1639,26 @@ void USingularisMorphVehicleSimulationComponent::SetLocallyControlled(const bool
 
 void USingularisMorphVehicleSimulationComponent::Update(const float /*DeltaTime*/)
 {
+	if (TargetGearInput == INDEX_NONE) return;
+
+	// 1) 控制决策读取最新物理输出，而非插值显示的 CurrentGear：
+	//    插值挡位固定取较旧输出帧的挡位，换挡期间会滞后；以它驱动脉冲会在变速箱
+	//    已进入空挡后再发一次，把目标挡位推过空挡（例如 1→N 被推成 -1）
+	const auto LatestGear = GetLatestTransmissionGear(
+		NextAsyncOutput ? NextAsyncOutput : CurrentAsyncOutput,
+		CurrentAsyncDataType,
+		GuidToCoreModule
+	);
+
 	// 未收到变速箱输出时挡位未知：此时发脉冲会把变速箱的初始挡位误判为需升降挡
-	if (TargetGearInput == INDEX_NONE || !bHasGearData || CurrentGear == TargetGearInput) return;
+	const auto bHasControlGear = LatestGear != INDEX_NONE || bHasGearData;
+	if (!bHasControlGear) return;
+
+	const auto ControlGear = LatestGear != INDEX_NONE ? LatestGear : CurrentGear;
+	if (ControlGear == TargetGearInput) return;
 
 	// 换挡进行中：变速箱以空挡（0）过渡，此时再发脉冲会把目标挡位继续推高
-	if (CurrentGear == 0) return;
+	if (ControlGear == 0) return;
 
 	// 无变速箱模块时脉冲无处消费
 	auto bHasTransmission = false;
@@ -1628,7 +1673,7 @@ void USingularisMorphVehicleSimulationComponent::Update(const float /*DeltaTime*
 	if (!bHasTransmission) return;
 
 	SetInputBool(
-		CurrentGear < TargetGearInput ? Chaos::ChangeUpControlName : Chaos::ChangeDownControlName,
+		ControlGear < TargetGearInput ? Chaos::ChangeUpControlName : Chaos::ChangeDownControlName,
 		true
 	);
 }

@@ -11,6 +11,9 @@ namespace
 	/** 父链遍历深度上限，避免损坏的树索引造成死循环 */
 	constexpr auto MaxPrimeMoverSearchDepth = 32;
 
+	/** 下游驱动力矩清理的递归深度上限，避免异常树结构造成无限递归 */
+	constexpr auto MaxDownstreamClearDepth = 32;
+
 	/** 将浮点 RPM 写入 uint32 设置前的安全转换 */
 	uint32 ToRPMValue(const float RPM)
 	{
@@ -40,8 +43,56 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 	// 1) 换挡点随原动机配置动态校准，保证换装不同引擎后仍按同一换挡逻辑工作
 	UpdateShiftPoints(VehicleModuleSystem);
 
-	// 2) 官方自动/手动换挡状态机与扭矩传递
+	// 2) 清除直接扭矩子节点上一物理步的驱动力矩。
+	//    官方模块在空挡（齿比为 0）时跳过 TransmitTorque，子节点会保留上一挡的
+	//    DriveTorque；轮轴随后会把它继续下推给车轮，造成空挡持续加速，
+	//    倒挡下则表现为反向持续加速。
+	TArray<FTorqueSimModule*, TInlineAllocator<4>> TorqueChildren;
+	const auto TreeIndex = GetTreeIndex();
+	if (TreeIndex >= 0 && VehicleModuleSystem.IsValidNode(TreeIndex))
+	{
+		for (const auto ChildIndex : VehicleModuleSystem.GetChildren(TreeIndex))
+		{
+			ISimulationModuleBase* ChildModule = VehicleModuleSystem.AccessSimModule(ChildIndex);
+			if (!ChildModule || ChildModule->GetSimType() == GetSimType())
+				continue;
+
+			if (FTorqueSimModule* TorqueChild = ChildModule->Cast<FTorqueSimModule>())
+				TorqueChildren.Add(TorqueChild);
+		}
+	}
+
+	for (FTorqueSimModule* TorqueChild : TorqueChildren)
+		TorqueChild->SetDriveTorque(0.0f);
+
+	// 3) 官方自动/手动换挡状态机与扭矩传递
 	FTransmissionSimModule::Simulate(DeltaTime, Inputs, VehicleModuleSystem);
+
+	// 4) 本步未向下游写入有效驱动力矩（空挡、零油门或非法值）时，递归清除更深层的
+	//    残留力矩，避免轮轴下一步把上一挡扭矩继续推给车轮
+	auto bTransmittedTorque = false;
+	for (FTorqueSimModule* TorqueChild : TorqueChildren)
+	{
+		const auto ChildDriveTorque = TorqueChild->GetDriveTorque();
+		if (!FMath::IsFinite(ChildDriveTorque))
+		{
+			TorqueChild->SetDriveTorque(0.0f);
+			continue;
+		}
+
+		if (!FMath::IsNearlyZero(ChildDriveTorque))
+			bTransmittedTorque = true;
+	}
+
+	if (!bTransmittedTorque)
+	{
+		for (const FTorqueSimModule* TorqueChild : TorqueChildren)
+		{
+			const auto ChildTreeIndex = TorqueChild->GetTreeIndex();
+			if (ChildTreeIndex >= 0)
+				ClearDownstreamDriveTorque(VehicleModuleSystem, ChildTreeIndex, 0);
+		}
+	}
 }
 
 bool FSingularisMorphTransmissionSimModule::GetDebugString(FString& StringOut) const
@@ -174,4 +225,34 @@ const Chaos::ISimulationModuleBase* FSingularisMorphTransmissionSimModule::FindP
 	}
 
 	return nullptr;
+}
+
+void FSingularisMorphTransmissionSimModule::ClearDownstreamDriveTorque(
+	const Chaos::FSimModuleTree& VehicleModuleSystem,
+	const int32 ParentIndex,
+	const int32 Depth
+)
+{
+	if (Depth >= MaxDownstreamClearDepth || ParentIndex < 0 || !VehicleModuleSystem.IsValidNode(ParentIndex))
+		return;
+
+	const ISimulationModuleBase* ParentModule = VehicleModuleSystem.AccessSimModule(ParentIndex);
+	if (!ParentModule)
+		return;
+
+	// 与 TransmitTorque 的语义一致：父模块不驱动同类型子节点，其扭矩来自其它来源，
+	// 清理时必须整棵跳过，避免误清独立动力支路
+	const FName ParentSimType = ParentModule->GetSimType();
+
+	for (const auto ChildIndex : VehicleModuleSystem.GetChildren(ParentIndex))
+	{
+		ISimulationModuleBase* ChildModule = VehicleModuleSystem.AccessSimModule(ChildIndex);
+		if (!ChildModule || ChildModule->GetSimType() == ParentSimType)
+			continue;
+
+		if (FTorqueSimModule* TorqueChild = ChildModule->Cast<FTorqueSimModule>())
+			TorqueChild->SetDriveTorque(0.0f);
+
+		ClearDownstreamDriveTorque(VehicleModuleSystem, ChildIndex, Depth + 1);
+	}
 }

@@ -30,6 +30,9 @@
  * 但轮轴的驱动力矩已是变速箱输出（乘过齿比）的整车扭矩量级，而自惯量仅为传动轴惯量，
  * 二者比值会使轮轴转速在单步内暴涨，并经齿比放大后直接顶到引擎最大转速。
  * 此处只保留转速同步，不进行自惯量积分。
+ *
+ * 轮轴不保留输入扭矩：每步转发后清零 DriveTorque，避免变速箱空挡（齿比为 0）
+ * 跳过传递时，上一挡的驱动力矩被持续下推给车轮。
  */
 class SINGULARISMORPHVEHICLE_API FSingularisMorphAxleSimModule : public Chaos::FAxleSimModule
 {
@@ -48,7 +51,11 @@ public:
 		Chaos::FSimModuleTree& VehicleModuleSystem
 	) override
 	{
+		// 轮轴是纯扭矩中继：本步输入必须在转发后消费。变速箱在空挡（齿比为 0）时
+		// 跳过 TransmitTorque，不会刷新轮轴的 DriveTorque；若不消费，上一挡的驱动力矩
+		// 会被持续下推给车轮，造成空挡持续加速、倒挡反向持续加速。
 		TransmitTorque(VehicleModuleSystem, DriveTorque, 0.0f);
+		DriveTorque = 0.0f;
 	}
 };
 
