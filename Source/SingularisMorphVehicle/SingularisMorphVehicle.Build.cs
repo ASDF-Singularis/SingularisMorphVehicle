@@ -13,6 +13,10 @@ public class SingularisMorphVehicle : ModuleRules
 				"Engine",
 				"NetCore",
 
+				"UMG",
+				"Slate",
+				"SlateCore",
+
 				"RenderCore",
 				"Renderer",
 				"RHI",
