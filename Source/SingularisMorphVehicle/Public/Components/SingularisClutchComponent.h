@@ -9,7 +9,8 @@
  * 引力奇点离合器组件
  *
  * 限制引擎与变速箱之间的扭矩传递量，允许连接的轴以不同转速旋转。
- * 离合器强度决定最大可传递扭矩。
+ * 离合器强度决定最大可传递扭矩。分离或空挡时输入轴随引擎空转，
+ * 下游不再接收扭矩；接合时扭矩与转速耦合均按接合量缩放。
  */
 UCLASS(
 	Blueprintable,
@@ -24,7 +25,7 @@ class SINGULARISMORPHVEHICLE_API USingularisClutchComponent : public USingularis
 public:
 #pragma region Parameter
 
-	/** 离合器接合强度（线性传递系数，1 = 完全接合直传扭矩） */
+	/** 离合器接合强度（线性传递系数，1 = 完全接合直传扭矩，0 = 完全分离） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

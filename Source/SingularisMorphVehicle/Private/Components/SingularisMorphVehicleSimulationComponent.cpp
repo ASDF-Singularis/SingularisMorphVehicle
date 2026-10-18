@@ -1530,8 +1530,33 @@ void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 		if (const USingularisTransmissionComponent* TransmissionSU =
 			Owner->FindComponentByClass<USingularisTransmissionComponent>())
 		{
-			MaxGear = FMath::Max(1, TransmissionSU->ForwardRatios.Num());
-			MinGear = -FMath::Max(1, TransmissionSU->ReverseRatios.Num());
+			// 自动变速箱不消费升降挡脉冲：写入目标会让 Update 每帧发脉冲却无人处理。
+			// 尤其是目标 0（空挡）永远无法到达，载具实际仍在前进挡
+			if (TransmissionSU->TransmissionType == ESingularisMorphVehicleTransmissionType::Automatic)
+			{
+				// 每个实例只告警一次，避免上层逐帧调用刷屏
+				if (!bWarnedAutomaticGearInput)
+				{
+					bWarnedAutomaticGearInput = true;
+
+					UE_LOG(
+						LogSingularisMorphVehicle,
+						Warning,
+						TEXT(
+							"[%s] SetGearInput is ignored: automatic transmission does not consume shift pulses"
+						),
+						*GetName()
+					);
+				}
+
+				TargetGearInput = INDEX_NONE;
+				return;
+			}
+
+			// 与变速箱的 CorrectGearInputRange 使用同一上限：空列表时只能请求空挡，
+			// 否则 Update 会为永远无法到达的挡位逐帧发送脉冲
+			MaxGear = FMath::Max(TransmissionSU->ForwardRatios.Num(), 0);
+			MinGear = -FMath::Max(TransmissionSU->ReverseRatios.Num(), 0);
 		}
 	}
 
@@ -1824,8 +1849,12 @@ void USingularisMorphVehicleSimulationComponent::ParallelUpdate(
 		else if (ModuleOutput->IsSimType<Chaos::FEngineSimModule>())
 		{
 			const auto* EngineOutput = static_cast<const Chaos::FEngineOutputData*>(ModuleOutput);
-			EngineRPM = EngineOutput->RPM;
-			EngineTorque = EngineOutput->Torque;
+			EngineRPM = FMath::IsFinite(EngineOutput->RPM) ? EngineOutput->RPM : 0.0f;
+
+			// 模拟模块内部使用 CGS 单位，对外的引擎扭矩统一为 N·m（负值为发动机制动）
+			EngineTorque = FMath::IsFinite(EngineOutput->Torque)
+				               ? Chaos::TorqueCmToM(EngineOutput->Torque)
+				               : 0.0f;
 		}
 
 		// 3b) 将仿真动画数据从 FSimOutputData 拷贝到 ModuleAnimationSetups
@@ -2038,7 +2067,7 @@ void USingularisMorphVehicleSimulationComponent::ShowDebugInfo(
 	YPos += Canvas->DrawText(
 		RenderFont,
 		FString::Printf(
-			TEXT("Gear %d  RPM %3.0f  Torque %3.0f  Speed(km/h) %3.1f"),
+			TEXT("Gear %d  RPM %3.0f  Torque %4.0f N.m  Speed(km/h) %3.1f"),
 			CurrentGear,
 			EngineRPM,
 			EngineTorque,
@@ -2124,8 +2153,9 @@ float USingularisMorphVehicleSimulationComponent::GetEngineMaxRPM() const
 			if (const USingularisEngineComponent* EngineSU = Cast<USingularisEngineComponent>(SUComp))
 			{
 				// 与建模块时的 uint16 上限钳制保持一致，避免归一化分母大于实际可达转速
-				const int32 ClampedEngineMaxRPM = FMath::Min(
+				const int32 ClampedEngineMaxRPM = FMath::Clamp(
 					EngineSU->MaxRPM,
+					0,
 					static_cast<int32>(MAX_uint16)
 				);
 				EngineMaxRPM = FMath::Max(EngineMaxRPM, static_cast<float>(ClampedEngineMaxRPM));
@@ -2134,7 +2164,12 @@ float USingularisMorphVehicleSimulationComponent::GetEngineMaxRPM() const
 
 		case ESingularisMorphVehicleModuleType::Motor:
 			if (const USingularisMotorComponent* MotorSU = Cast<USingularisMotorComponent>(SUComp))
-				MotorMaxRPM = FMath::Max(MotorMaxRPM, MotorSU->MaxRPM);
+			{
+				const float SanitizedMotorMaxRPM = FMath::IsFinite(MotorSU->MaxRPM)
+					                                   ? FMath::Max(MotorSU->MaxRPM, 0.0f)
+					                                   : 0.0f;
+				MotorMaxRPM = FMath::Max(MotorMaxRPM, SanitizedMotorMaxRPM);
+			}
 			break;
 
 		default: break;

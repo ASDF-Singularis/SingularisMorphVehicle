@@ -32,7 +32,32 @@ FSingularisMorphTransmissionSimModule::FSingularisMorphTransmissionSimModule(
 	: FTransmissionSimModule(Settings),
 	  ShiftSettings(InShiftSettings),
 	  ManualChangeUpRPM(static_cast<float>(Settings.ChangeUpRPM)),
-	  ManualChangeDownRPM(static_cast<float>(Settings.ChangeDownRPM)) {}
+	  ManualChangeDownRPM(static_cast<float>(Settings.ChangeDownRPM))
+{
+	// 追加派生标记类型，供本插件按派生类识别；随后重新写入基类类型名，
+	// 使 GetSimType() 保持 FTransmissionSimModule（网络工厂按该名称生成哈希）
+	AddType(_CHAOSTYPENAMERETRIVAL_());
+	AddType(FTransmissionSimModule::_CHAOSTYPENAMERETRIVAL_());
+
+	// 非法齿比会让扭矩与转速耦合产生 NaN；非有限值按 0（空挡）处理
+	Chaos::FTransmissionSettings& SettingsRef = AccessSetup();
+	for (float& Ratio : SettingsRef.ForwardRatios)
+	{
+		if (!FMath::IsFinite(Ratio))
+			Ratio = 0.0f;
+	}
+	for (float& Ratio : SettingsRef.ReverseRatios)
+	{
+		if (!FMath::IsFinite(Ratio))
+			Ratio = 0.0f;
+	}
+	if (!FMath::IsFinite(SettingsRef.FinalDriveRatio))
+		SettingsRef.FinalDriveRatio = 0.0f;
+
+	// 上游构造函数无条件把初始挡位设为 1；前进挡为空时 GetGearRatio(1) 会越界访问
+	if (SettingsRef.ForwardRatios.IsEmpty())
+		SetGear(0, true);
+}
 
 void FSingularisMorphTransmissionSimModule::Simulate(
 	const float DeltaTime,
@@ -80,7 +105,7 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 			continue;
 		}
 
-		if (!FMath::IsNearlyZero(ChildDriveTorque))
+		if (FMath::Abs(ChildDriveTorque) > SMALL_NUMBER)
 			bTransmittedTorque = true;
 	}
 
@@ -91,6 +116,34 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 			const auto ChildTreeIndex = TorqueChild->GetTreeIndex();
 			if (ChildTreeIndex >= 0)
 				ClearDownstreamDriveTorque(VehicleModuleSystem, ChildTreeIndex, 0);
+		}
+	}
+
+	// 5) 空挡时输入轴随原动机空转。无离合器直连拓扑中，原动机的 TransmitTorque
+	//    会把自身转速同步为直接子节点（本模块）的转速；本模块若在空挡保持旧转速，
+	//    会把原动机转速钳回旧值，使空挡油门无法提升转速。
+	//    上游为离合器时由其负责输入轴跟踪，此处不重复处理。
+	if (IsInNeutral())
+	{
+		const int32 SelfIndex = GetTreeIndex();
+		if (SelfIndex >= 0 && VehicleModuleSystem.IsValidNode(SelfIndex))
+		{
+			const int32 ParentIndex = VehicleModuleSystem.GetParent(SelfIndex);
+			if (ParentIndex >= 0 && VehicleModuleSystem.IsValidNode(ParentIndex))
+			{
+				ISimulationModuleBase* ParentModule = VehicleModuleSystem.AccessSimModule(ParentIndex);
+				if (ParentModule
+					&& (ParentModule->IsSimType<Chaos::FEngineSimModule>()
+						|| ParentModule->IsSimType<Chaos::FMotorSimModule>()))
+				{
+					if (const FTorqueSimModule* PrimeMover = ParentModule->Cast<FTorqueSimModule>())
+					{
+						const float PrimeMoverVelocity = PrimeMover->GetAngularVelocity();
+						if (FMath::IsFinite(PrimeMoverVelocity))
+							SetAngularVelocity(PrimeMoverVelocity);
+					}
+				}
+			}
 		}
 	}
 }

@@ -2,7 +2,9 @@
 
 #include <CoreMinimal.h>
 
+#include "VehicleUtility.h"
 #include "SimModule/AxleModule.h"
+#include "SimModule/ClutchModule.h"
 #include "SimModule/EngineModule.h"
 #include "SimModule/MotorModule.h"
 
@@ -15,11 +17,12 @@
  * 空网络数据（FSimModuleTree::GenerateReplicationStructure 声明 "nullptr is a valid response"），
  * 即这两个模块不参与网络状态复制。
  *
- * 不引入新的模拟类型名：GetSimType() 与 IsSimType<FAxleSimModule>() 仍与上游一致，故
- * FTorqueSimModule::TransmitTorque 中按 GetSimType() 相等跳过同类子节点的判定与模块
- * 工厂注册均不受影响。
+ * 不改变 GetSimType()：轮轴/电机的类型名与上游一致，故 FTorqueSimModule::TransmitTorque
+ * 中按 GetSimType() 相等跳过同类子节点的判定与模块工厂注册均不受影响。需要在插件内按
+ * 派生类识别离合器/变速箱时，构造时仅追加标记类型并重新写入基类类型名，
+ * GetSimType() 仍返回基类名（见对应类的说明）。
  *
- * 另含引擎转速限制器模块（见 FSingularisMorphEngineSimModule）。
+ * 另含离合器、引擎转速限制器与空挡输入轴跟踪模块（见下方各类）。
  */
 
 /**
@@ -60,30 +63,115 @@ public:
 };
 
 /**
- * 引力奇点变型引擎模拟模块。
+ * 引力奇点离合器模拟模块。
  *
- * 在官方引擎模块之上补齐转速限制器（Rev Limiter）：官方模块只把自身角速度
- * 钳制到 MaxRPM，并未把传动系转速约束在该上限内。载具滑行、下坡或传动比
- * 配置较高时，车轮角速度可以继续上升，引擎转速被钳制而车速不受限制。
+ * 上游离合器无论踏板位置都会把引擎与变速箱转速按固定 0.1 系数互拉，导致离合分离或
+ * 空挡时传动系仍被引擎拖动，引擎转速也会被无负载的变速箱输入轴反向拖慢。
+ * 本模块以 (1 - 踏板) × ClutchStrength 作为接合量：
+ * 分离或下游变速箱处于空挡时，输入轴随引擎空转并向下游写入零扭矩，清除上一物理步残留；
+ * 接合时按接合量缩放扭矩与转速耦合；空挡且接合时让变速箱输入轴与引擎同步，
+ * 避免重新挂挡时转速突变。
  *
- * 本模块在引擎步末尾检查子节点（离合/变速箱侧）的真实角速度：
- * 超过 MaxRPM 对应角速度时按超速比例向该扭矩子节点下推与其实际转向相反的扭矩，
- * 经齿比放大后成为车轮制动力。比例控制避免在上限附近硬通断造成抖动，
- * 同时超速越多制动越强，稳定后的超速量被限制在很小范围内；
- * 制动力矩方向跟随子节点角速度符号，因此倒挡行驶、前进挡溜车或传动系
- * 被反向拖动时不会因固定负扭矩而反向加速传动系。
+ * 不改变 GetSimType()：构造时追加派生标记类型后重新写入基类类型名，
+ * 网络工厂哈希、复制结构与同类型子节点跳过判定仍按 FClutchSimModule 工作。
  */
-class SINGULARISMORPHVEHICLE_API FSingularisMorphEngineSimModule : public Chaos::FEngineSimModule
+class SINGULARISMORPHVEHICLE_API FSingularisMorphClutchSimModule : public Chaos::FClutchSimModule
 {
 public:
-	explicit FSingularisMorphEngineSimModule(const Chaos::FEngineSettings& Settings)
-		: FEngineSimModule(Settings) {}
+	DEFINE_CHAOSSIMTYPENAME(FSingularisMorphClutchSimModule);
+
+	explicit FSingularisMorphClutchSimModule(const Chaos::FClutchSettings& Settings)
+		: FClutchSimModule(Settings)
+	{
+		// 追加派生标记类型，供本插件按派生类识别；随后重新写入基类类型名，
+		// 使 GetSimType() 保持 FClutchSimModule（网络工厂按该名称生成哈希）
+		AddType(_CHAOSTYPENAMERETRIVAL_());
+		AddType(FClutchSimModule::_CHAOSTYPENAMERETRIVAL_());
+	}
 
 	virtual void Simulate(
 		float DeltaTime,
 		const Chaos::FAllInputs& Inputs,
 		Chaos::FSimModuleTree& VehicleModuleSystem
 	) override;
+
+	virtual bool GetDebugString(FString& StringOut) const override;
+
+	/** 当前接合量 [0..1]，0 为完全分离 */
+	float GetClutchValue() const { return Engagement; }
+
+	/** 接合量是否足以让传动系约束引擎转速 */
+	bool IsLocked() const { return Engagement > LockThreshold; }
+
+private:
+	/** 引擎转速可被传动系约束的最小接合量 */
+	static constexpr auto LockThreshold = 0.5f;
+
+	float Engagement = 1.0f;
+};
+
+/**
+ * 引力奇点引擎模拟模块。
+ *
+ * 在官方引擎模块之上补齐三处行为：
+ * 最大转速前按比例线性收油，避免官方模块在最大转速处断油与制动交替造成的转速抖动；
+ * 松油门时把随转速缩放的负扭矩作为驱动力矩下推，使挂挡滑行经传动系产生引擎制动，
+ * 空挡时则只降低引擎自身转速；
+ * 倒挡传动系角速度为负，而引擎实际仍正转，转速耦合后取绝对值，
+ * 避免怠速钳制把倒挡行驶时的引擎转速固定在怠速。
+ *
+ * 空挡与离合分离时的自由转速由离合器/变速箱的输入轴跟踪保证：无负载时输入轴转速
+ * 会同步为原动机转速，因此引擎的转速耦合不会把自身积分结果钳回旧值。
+ *
+ * 自由升速/降速还受最大转速变化率限制，避免低转动惯量配置下转速在数帧内冲到红区；
+ * 该限制只作用于空挡/离合分离的自由转速，接合时仍由传动系决定转速。
+ */
+class SINGULARISMORPHVEHICLE_API FSingularisMorphEngineSimModule : public Chaos::FEngineSimModule
+{
+public:
+	explicit FSingularisMorphEngineSimModule(
+		const Chaos::FEngineSettings& Settings,
+		float InRevUpRateRPM = 5000.0f,
+		float InRevDownRateRPM = 4000.0f
+	)
+		: FEngineSimModule(Settings),
+		  RevUpRateOmega(
+			  FMath::IsFinite(InRevUpRateRPM)
+				  ? Chaos::RPMToOmega(FMath::Max(InRevUpRateRPM, 0.0f))
+				  : 0.0f
+		  ),
+		  RevDownRateOmega(
+			  FMath::IsFinite(InRevDownRateRPM)
+				  ? Chaos::RPMToOmega(FMath::Max(InRevDownRateRPM, 0.0f))
+				  : 0.0f
+		  )
+	{
+		// 引擎创建即处于怠速：避免首个物理步从 0 被怠速钳制瞬间拉到怠速
+		AngularVelocity = EngineIdleSpeed;
+	}
+
+	virtual void Simulate(
+		float DeltaTime,
+		const Chaos::FAllInputs& Inputs,
+		Chaos::FSimModuleTree& VehicleModuleSystem
+	) override;
+
+private:
+	/** 空挡自由升速的最大角速度变化率（rad/s²）；0 表示不限制 */
+	float RevUpRateOmega = 0.0f;
+
+	/** 空挡自由降速的最大角速度变化率（rad/s²）；0 表示不限制 */
+	float RevDownRateOmega = 0.0f;
+
+	/** 动力链是否挂有可驱动车轮（离合器接合且变速箱不在空挡） */
+	bool IsDrivelineConnected(Chaos::FSimModuleTree& VehicleModuleSystem) const;
+
+	/** 从 ParentIndex 沿扭矩子节点向下查找车轮 */
+	bool HasLoadedDriveline(
+		Chaos::FSimModuleTree& VehicleModuleSystem,
+		int32 ParentIndex,
+		int32 Depth
+	) const;
 };
 
 /** 引力奇点变型电机模拟模块。 */

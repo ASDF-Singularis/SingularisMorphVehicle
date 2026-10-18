@@ -37,7 +37,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 		Category = "引力奇点立轴仿真单元|转向",
 		meta = (DisplayName = "转向上升速率", ClampMin = "0.0", UIMin = "0.0")
 	)
-	float SteeringRiseRate = 120.0f;
+	float SteeringRiseRate = 20.0f;
 
 	/** 转向角回落速率（度/秒），通常大于上升速率以便更快回正 */
 	UPROPERTY(
@@ -46,7 +46,7 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleSteeringSetup
 		Category = "引力奇点立轴仿真单元|转向",
 		meta = (DisplayName = "转向回落速率", ClampMin = "0.0", UIMin = "0.0")
 	)
-	float SteeringFallRate = 240.0f;
+	float SteeringFallRate = 120.0f;
 
 	/** 角度比例（角度比例几何用）：内侧轮 = 参考角 / 比例，取值 (0, 1] */
 	UPROPERTY(

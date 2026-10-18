@@ -19,15 +19,29 @@
  * DriveTorque；本模块在每步模拟前清零直接扭矩子节点，并在本步未传递有效扭矩时
  * 递归清零下游残留，避免空挡持续加速与倒挡反向失控。
  *
- * 不声明新的模拟类型名：输出/网络数据与工厂均以 FTransmissionSimModule 类型识别该模块。
+ * 空挡时若上游直接为原动机（无离合器直连拓扑），本模块把输入轴转速同步为原动机转速：
+ * 原动机的 TransmitTorque 会以直接子节点（本模块）的转速为耦合参照，输入轴若在空挡
+ * 保持旧转速，会把原动机转速钳回旧值，使空挡油门无法提升转速。
+ *
+ * 不改变 GetSimType()：构造时追加派生标记类型后重新写入基类类型名，
+ * 输出/网络数据、工厂哈希与同类型子节点判定仍以 FTransmissionSimModule 工作。
  */
 class SINGULARISMORPHVEHICLE_API FSingularisMorphTransmissionSimModule : public Chaos::FTransmissionSimModule
 {
 public:
+	DEFINE_CHAOSSIMTYPENAME(FSingularisMorphTransmissionSimModule);
+
 	explicit FSingularisMorphTransmissionSimModule(
 		const Chaos::FTransmissionSettings& Settings,
 		const FSingularisMorphTransmissionShiftSettings& InShiftSettings
 	);
+
+	/** 当前挡位是否无有效齿比（空挡、零齿比或换挡过渡） */
+	bool IsInNeutral()
+	{
+		const int32 Gear = GetCurrentGear();
+		return Gear == 0 || FMath::Abs(GetGearRatio(Gear)) <= SMALL_NUMBER;
+	}
 
 	virtual void Simulate(
 		float DeltaTime,

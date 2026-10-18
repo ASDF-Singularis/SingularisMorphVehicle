@@ -77,8 +77,8 @@ struct SINGULARISMORPHVEHICLE_API FSingularisMorphVehicleTelemetry
 	UPROPERTY(BlueprintReadOnly, Category = "引力奇点变型载具遥测", meta = (DisplayName = "引擎转速比"))
 	float EngineRPMRatio = 0.0f;
 
-	/** 引擎扭矩 */
-	UPROPERTY(BlueprintReadOnly, Category = "引力奇点变型载具遥测", meta = (DisplayName = "引擎扭矩"))
+	/** 引擎净扭矩（N·m；负值为发动机制动） */
+	UPROPERTY(BlueprintReadOnly, Category = "引力奇点变型载具遥测", meta = (DisplayName = "引擎扭矩(N·m)"))
 	float EngineTorque = 0.0f;
 
 	/** 是否由本地玩家控制 */

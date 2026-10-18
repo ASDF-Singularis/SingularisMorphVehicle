@@ -490,17 +490,20 @@ private:
 	bool bHasGearData = false;
 
 	/**
-	 * 目标挡位请求（SetGearInput 写入，Update 逐帧产出换挡脉冲直到挡位到达）。
+	 * 目标挡位请求（SetGearInput 写入，仅手动变速箱；Update 逐帧产出换挡脉冲直到挡位到达）。
 	 *
 	 * INDEX_NONE 表示无请求。变速箱一次只接受一挡（目标挡位 ±1），
 	 * 单次脉冲无法跨越多个挡位，故请求需跨多个换挡周期持续产出。
 	 */
 	int32 TargetGearInput = INDEX_NONE;
 
+	/** 自动变速拒绝手动换挡请求的告警是否已发出（避免逐帧调用刷屏） */
+	bool bWarnedAutomaticGearInput = false;
+
 	/** 引擎转速（由引擎输出缓存） */
 	float EngineRPM = 0.0f;
 
-	/** 引擎扭矩（由引擎输出缓存） */
+	/** 引擎净扭矩（由引擎输出缓存，N·m；负值为发动机制动） */
 	float EngineTorque = 0.0f;
 
 	/** GUID 到核心模块的映射（仅游戏线程访问，避免读取物理线程拥有的模拟树） */
@@ -711,7 +714,11 @@ public:
 		EModuleInputBufferActionType BufferAction = EModuleInputBufferActionType::Override
 	) const;
 
-	/** 设置目标挡位（手动变速箱），越界请求按变速箱实际挡数钳制 */
+	/**
+	 * 设置目标挡位（仅手动变速箱），越界请求按变速箱实际挡数钳制。
+	 *
+	 * 自动变速箱不消费升降挡脉冲，调用会被忽略并告警；挡位由自动换挡状态机决定。
+	 */
 	UFUNCTION(
 		BlueprintCallable,
 		Category = "引力奇点变型载具仿真组件|API",
@@ -882,7 +889,7 @@ public:
 	)
 	float GetEngineRPM() const { return EngineRPM; }
 
-	/** 获取引擎扭矩 */
+	/** 获取引擎净扭矩（N·m；负值为发动机制动） */
 	UFUNCTION(
 		BlueprintPure,
 		Category = "引力奇点变型载具仿真组件|State",

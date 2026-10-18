@@ -46,12 +46,16 @@ public:
 	)
 	float MaxRPM = 6000.0f;
 
-	/** 电机惯性（kg·m²） */
+	/**
+	 * 电机转动惯量（kg·cm²，1 kg·m² = 10000 kg·cm²）
+	 *
+	 * 与 Chaos 模拟模块的 CGS 单位一致，直接参与角速度积分。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点电机组件",
-		meta = (DisplayName = "电机惯性", ClampMin = "0.001")
+		meta = (DisplayName = "电机惯性(kg·cm²)", ClampMin = "1", UIMin = "1")
 	)
 	float EngineInertia = 100.0f;
 

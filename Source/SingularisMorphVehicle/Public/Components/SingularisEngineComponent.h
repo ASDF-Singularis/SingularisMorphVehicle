@@ -11,6 +11,7 @@
  *
  * 通过扭矩曲线定义引擎输出特性，向变速箱/离合器输送扭矩。
  * 模拟怠速、引擎制动、惯性等内燃机行为，输出数据通过 OnOutputReady 传递至游戏线程。
+ * 空挡或离合分离时引擎按自身扭矩与惯性自由升速，松油门后按引擎制动扭矩回落至怠速。
  */
 UCLASS(
 	Blueprintable,
@@ -57,16 +58,21 @@ public:
 	)
 	int32 MaxRPM = 5000;
 
-	/** 怠速转速（RPM） */
+	/** 怠速转速（RPM），运行时会被钳制到最大转速以下 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点引擎组件|转速",
-		meta = (DisplayName = "怠速RPM")
+		meta = (DisplayName = "怠速RPM", ClampMin = "0", UIMin = "0")
 	)
 	int32 EngineIdleRPM = 1200;
 
-	/** 引擎制动扭矩（N·m），释放油门时施加于引擎的阻力 */
+	/**
+	 * 最大引擎制动扭矩（N·m）
+	 *
+	 * 释放油门时按转速从怠速向最大转速线性增强；挂挡滑行时经传动系制动车辆，
+	 * 空挡时只降低引擎自身转速。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -75,12 +81,39 @@ public:
 	)
 	float EngineBrakeEffect = 150.0f;
 
-	/** 引擎惯性（kg·m²） */
+	/**
+	 * 空挡/离合分离时的最大升速速率（RPM/s）
+	 *
+	 * 仅约束自由转速，接合时转速由传动系决定；0 表示不限制。
+	 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
 		Category = "引力奇点引擎组件|动力学",
-		meta = (DisplayName = "引擎惯性", ClampMin = "0.001")
+		meta = (DisplayName = "空挡升速速率(RPM/s)", ClampMin = "0", UIMin = "0", UIMax = "20000")
+	)
+	float EngineRevUpRate = 5000.0f;
+
+	/** 空挡/离合分离时的最大降速速率（RPM/s），0 表示不限制 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点引擎组件|动力学",
+		meta = (DisplayName = "空挡降速速率(RPM/s)", ClampMin = "0", UIMin = "0", UIMax = "20000")
+	)
+	float EngineRevDownRate = 4000.0f;
+
+	/**
+	 * 引擎转动惯量（kg·cm²，1 kg·m² = 10000 kg·cm²）
+	 *
+	 * 与 Chaos 模拟模块的 CGS 单位一致，直接参与角速度积分；
+	 * 1000 kg·cm² ≈ 0.1 kg·m²，为轻量赛车飞轮量级。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点引擎组件|动力学",
+		meta = (DisplayName = "引擎惯性(kg·cm²)", ClampMin = "1", UIMin = "1")
 	)
 	float EngineInertia = 1000.0f;
 

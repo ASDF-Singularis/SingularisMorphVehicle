@@ -265,13 +265,16 @@ void USingularisMorphVehicleSoundComponent::PushContinuousParameters()
 	//    时回退到 FallbackMaxEngineRPM；瞬时过速钳制到 [0..1]
 	const float MaxRPM = Simulation->GetEngineMaxRPM();
 	const float RPMDenominator = MaxRPM > 0.0f ? MaxRPM : FMath::Max(FallbackMaxEngineRPM, 1.0f);
-	const float NormalizedRPM = FMath::Clamp(Simulation->GetEngineRPM() / RPMDenominator, 0.0f, 1.0f);
+	const float EngineRPM = Simulation->GetEngineRPM();
+	const float NormalizedRPM = FMath::IsFinite(EngineRPM)
+		                            ? FMath::Clamp(EngineRPM / RPMDenominator, 0.0f, 1.0f)
+		                            : 0.0f;
 	UE_LOG(
 		LogSingularisMorphVehicle,
-		Log,
+		Verbose,
 		TEXT("[%s] EngineRPM=%f NormalizedRPM=%f RPMDenominator=%f"),
 		*GetNameSafe(GetOwner()),
-		Simulation->GetEngineRPM(),
+		EngineRPM,
 		NormalizedRPM,
 		RPMDenominator
 	);
@@ -283,9 +286,10 @@ void USingularisMorphVehicleSoundComponent::PushContinuousParameters()
 		1.0f
 	);
 
-	// 3) 挡位与引擎扭矩原始值直传：正负号与量纲承载物理语义，映射由 MetaSound 图决定
+	// 3) 挡位与引擎净扭矩（N·m）原始值直传：正负号承载驱动/制动语义，映射由 MetaSound 图决定
 	const int32 CurrentGear = Simulation->GetCurrentGear();
-	const float EngineTorque = Simulation->GetEngineTorque();
+	const float RawEngineTorque = Simulation->GetEngineTorque();
+	const float EngineTorque = FMath::IsFinite(RawEngineTorque) ? RawEngineTorque : 0.0f;
 
 	// 4) 变更检测后写入：音频参数语义为持续保持，重复写同值只产生冗余音频线程流量
 	if (!FMath::IsNearlyEqual(NormalizedRPM, LastPushedRPM, ParameterEpsilon))
@@ -317,6 +321,6 @@ void USingularisMorphVehicleSoundComponent::ResetPushCaches()
 {
 	LastPushedRPM = -1.0f;
 	LastPushedSpeed = -1.0f;
-	LastPushedTorque = -1.0f;
+	LastPushedTorque = TNumericLimits<float>::Lowest();
 	LastPushedGear = INDEX_NONE;
 }

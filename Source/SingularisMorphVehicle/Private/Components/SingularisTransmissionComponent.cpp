@@ -37,16 +37,52 @@ Chaos::ISimulationModuleBase* USingularisTransmissionComponent::CreateNewCoreMod
 	const int32 ClampedChangeUpRPM = FMath::Max(ChangeUpRPM, 0);
 	const int32 ClampedChangeDownRPM = FMath::Max(ChangeDownRPM, 0);
 
+	// 非有限齿比会在扭矩与转速耦合中传播为 NaN，按空挡（齿比 0）处理
 	Settings.ForwardRatios = ForwardRatios;
+	for (float& Ratio : Settings.ForwardRatios)
+	{
+		if (!FMath::IsFinite(Ratio))
+			Ratio = 0.0f;
+	}
+
 	Settings.ReverseRatios = ReverseRatios;
-	Settings.FinalDriveRatio = FinalDriveRatio;
+	for (float& Ratio : Settings.ReverseRatios)
+	{
+		if (!FMath::IsFinite(Ratio))
+			Ratio = 0.0f;
+	}
+
+	Settings.FinalDriveRatio = FMath::IsFinite(FinalDriveRatio) ? FinalDriveRatio : 0.0f;
 	Settings.ChangeUpRPM = static_cast<uint32>(ClampedChangeUpRPM);
 	Settings.ChangeDownRPM = static_cast<uint32>(ClampedChangeDownRPM);
-	Settings.GearChangeTime = FMath::Max(GearChangeTime, 0.0f);
-	Settings.GearHysteresisTime = FMath::Max(GearHysteresisTime, 0.0f);
+	Settings.GearChangeTime = FMath::IsFinite(GearChangeTime) ? FMath::Max(GearChangeTime, 0.0f) : 0.0f;
+	Settings.GearHysteresisTime = FMath::IsFinite(GearHysteresisTime)
+		                              ? FMath::Max(GearHysteresisTime, 0.0f)
+		                              : 0.0f;
 	Settings.TransmissionEfficiency = TransmissionEfficiency;
 	Settings.TransmissionType = static_cast<Chaos::FTransmissionSettings::ETransType>(TransmissionType);
 	Settings.AutoReverse = AutoReverse;
+
+	// 前进挡为空或主减速比为 0 时所有挡位都没有有效齿比；提前告警，
+	// 避免误判为空挡油门失效
+	if (Settings.ForwardRatios.IsEmpty())
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Warning,
+			TEXT("[Transmission] %s: ForwardRatios is empty - the transmission will stay in neutral"),
+			*GetName()
+		);
+	}
+	else if (FMath::Abs(Settings.FinalDriveRatio) <= SMALL_NUMBER)
+	{
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Warning,
+			TEXT("[Transmission] %s: FinalDriveRatio is zero - all gears behave as neutral"),
+			*GetName()
+		);
+	}
 
 	// 2) 手动模式下升降挡点倒置会让自动换挡在相邻挡位间往复，提前告警
 	if (!bAutoCalculateShiftPoints && ClampedChangeUpRPM <= ClampedChangeDownRPM)

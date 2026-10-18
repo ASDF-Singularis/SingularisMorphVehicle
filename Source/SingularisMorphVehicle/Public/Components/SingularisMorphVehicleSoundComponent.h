@@ -4,6 +4,7 @@
 #include <Components/ActorComponent.h>
 #include <Engine/EngineTypes.h>
 #include <Engine/HitResult.h>
+#include <Math/NumericLimits.h>
 
 #include "SingularisMorphVehicleSoundComponent.generated.h"
 
@@ -126,7 +127,7 @@ public:
 	)
 	FName RPMParameterName = TEXT("RPM");
 
-	/** 引擎扭矩参数名：原始值直传（负值为发动机制动方向，归一化由 MetaSound 图决定） */
+	/** 引擎净扭矩参数名：N·m 原始值直传（负值为发动机制动方向，归一化由 MetaSound 图决定） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -225,8 +226,8 @@ private:
 	/** 最近一次写入的车速参数缓存 */
 	float LastPushedSpeed = -1.0f;
 
-	/** 最近一次写入的扭矩参数缓存 */
-	float LastPushedTorque = -1.0f;
+	/** 最近一次写入的扭矩参数缓存（可为负值，故使用浮点下限作哨兵） */
+	float LastPushedTorque = TNumericLimits<float>::Lowest();
 
 	/** 最近一次写入的挡位参数缓存 */
 	int32 LastPushedGear = INDEX_NONE;
