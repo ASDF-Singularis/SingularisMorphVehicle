@@ -20,6 +20,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGearChange, int32, Guid, int32, 
  * 通过齿轮比倍率将引擎扭矩传递至车轮驱动系统。
  * 自动换挡点始终按原动机可用转速区间与相邻挡位齿比步长动态计算，
  * 换装不同引擎后无需重新标定固定 RPM；仅保留升降挡比例作为手感调节入口。
+ * 自动倒挡不再是组件配置：自动变速箱在存在有效倒挡与主减速比时固定启用，
+ * 手动变速箱方向由 ChangeUp/ChangeDown 脉冲逐挡决定。
  */
 UCLASS(
 	Blueprintable,
@@ -131,23 +133,6 @@ public:
 		meta = (DisplayName = "变速箱类型")
 	)
 	ESingularisMorphVehicleTransmissionType TransmissionType = ESingularisMorphVehicleTransmissionType::Automatic;
-
-	/**
-	 * 是否自动倒挡（仅自动变速箱生效）
-	 *
-	 * 启用后，按住 Reverse 输入通道时目标挡位切至倒挡，松开后回到前进挡。
-	 * 方向切换由输入直接驱动，与升降挡转速比例无关；
-	 * 转速比例只在同一方向内选择具体挡位。
-	 * 手动变速箱或没有有效倒挡时忽略该选项：官方 AutoReverse 会绕过空挡过渡
-	 * 直接改写目标挡位，与逐挡换挡脉冲冲突；手动方向完全由 ChangeUp/ChangeDown 决定。
-	 */
-	UPROPERTY(
-		EditDefaultsOnly,
-		BlueprintReadOnly,
-		Category = "引力奇点变速箱组件|传动",
-		meta = (DisplayName = "自动倒挡")
-	)
-	bool AutoReverse = true;
 
 #pragma endregion
 

@@ -57,11 +57,14 @@ FSingularisMorphTransmissionSimModule::FSingularisMorphTransmissionSimModule(
 		SettingsRef.FinalDriveRatio = 0.0f;
 
 	// AutoReverse 由官方状态机在 Simulate 开头直接改写 TargetGear，且不经过 SetGear 的
-	// 空挡过渡：手动变速箱按住油门降挡到空挡时会被改回倒挡，倒挡松键时又会被直接拉回
-	// 前进挡，形成换挡冲击与倒车失控。手动变速箱的方向只由 ChangeUp/ChangeDown 脉冲
-	// 逐挡决定，故仅在「自动变速箱且存在有效倒挡」时保留 AutoReverse；
-	// 无倒挡时 AutoReverse 会把目标挡位夹成 0，随后自动逻辑又升回前进挡。
-	if (SettingsRef.TransmissionType != Chaos::FTransmissionSettings::AutomaticType || !bHasReverseGear)
+	// 空挡过渡。该行为按变速箱类型固定：自动变速箱存在有效倒挡与主减速比时启用，
+	// 供 Reverse 输入切换方向；手动变速箱始终禁用，方向只由 ChangeUp/ChangeDown 脉冲
+	// 逐挡决定。无有效倒挡或主减速比为零时也禁用，避免目标挡位被夹成 0 后又被自动
+	// 逻辑升回前进挡。
+	const bool bHasValidFinalDrive = FMath::Abs(SettingsRef.FinalDriveRatio) > SMALL_NUMBER;
+	if (SettingsRef.TransmissionType != Chaos::FTransmissionSettings::AutomaticType
+		|| !bHasReverseGear
+		|| !bHasValidFinalDrive)
 		SettingsRef.AutoReverse = false;
 
 	// 上游构造函数无条件把初始挡位设为 1；前进挡为空时 GetGearRatio(1) 会越界访问
