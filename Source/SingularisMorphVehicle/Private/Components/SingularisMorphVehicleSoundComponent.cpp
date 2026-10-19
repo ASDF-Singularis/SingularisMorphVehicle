@@ -12,6 +12,9 @@ namespace
 {
 	/** 参数变更检测的最小差异（归一化值分辨率） */
 	constexpr auto ParameterEpsilon = 1e-4f;
+
+	/** RPM 归一化回退上限无效时的兜底值 */
+	constexpr auto DefaultFallbackMaxEngineRPM = 6000.0f;
 }
 
 USingularisMorphVehicleSoundComponent::USingularisMorphVehicleSoundComponent()
@@ -261,22 +264,31 @@ void USingularisMorphVehicleSoundComponent::PushContinuousParameters()
 	const USingularisMorphVehicleSimulationComponent* Simulation = SimulationComponent.Get();
 	if (!Simulation) return;
 
-	// 1) 引擎转速归一化：分母取仿真组件聚合的引擎最大转速，取不到（手动注册路径/无原动机）
-	//    时回退到 FallbackMaxEngineRPM；瞬时过速钳制到 [0..1]
+	// 1) 引擎转速按「0 → 最大转速」归一化：0 RPM 为 0、最大转速为 1。
+	//    接合时引擎可被离合拖到怠速以下，因此不能以怠速作为归一化起点；
+	//    取不到最大转速（手动注册路径/无原动机）时回退到 FallbackMaxEngineRPM
 	const float MaxRPM = Simulation->GetEngineMaxRPM();
-	const float RPMDenominator = MaxRPM > 0.0f ? MaxRPM : FMath::Max(FallbackMaxEngineRPM, 1.0f);
+	const bool bHasEngineRPMRange = FMath::IsFinite(MaxRPM) && MaxRPM > 0.0f;
+
+	const float FallbackMaxRPM = FMath::IsFinite(FallbackMaxEngineRPM)
+		                             ? FMath::Max(FallbackMaxEngineRPM, 1.0f)
+		                             : DefaultFallbackMaxEngineRPM;
+	const float ResolvedMaxRPM = FMath::Max(
+		bHasEngineRPMRange ? MaxRPM : FallbackMaxRPM,
+		1.0f
+	);
 	const float EngineRPM = Simulation->GetEngineRPM();
 	const float NormalizedRPM = FMath::IsFinite(EngineRPM)
-		                            ? FMath::Clamp(EngineRPM / RPMDenominator, 0.0f, 1.0f)
+		                            ? FMath::Clamp(EngineRPM / ResolvedMaxRPM, 0.0f, 1.0f)
 		                            : 0.0f;
 	UE_LOG(
 		LogSingularisMorphVehicle,
 		Verbose,
-		TEXT("[%s] EngineRPM=%f NormalizedRPM=%f RPMDenominator=%f"),
+		TEXT("[%s] EngineRPM=%f MaxRPM=%f NormalizedRPM=%f"),
 		*GetNameSafe(GetOwner()),
 		EngineRPM,
-		NormalizedRPM,
-		RPMDenominator
+		ResolvedMaxRPM,
+		NormalizedRPM
 	);
 
 	// 2) 车速归一化（km/h）

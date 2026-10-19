@@ -12,6 +12,9 @@
  * 通过扭矩曲线定义引擎输出特性，向变速箱/离合器输送扭矩。
  * 模拟怠速、引擎制动、惯性等内燃机行为，输出数据通过 OnOutputReady 传递至游戏线程。
  * 空挡或离合分离时引擎按自身扭矩与惯性自由升速，松油门后按引擎制动扭矩回落至怠速。
+ * 挂挡且未踩制动/油门时按怠速蠕行设置向传动系输出扭矩，使载具能够自行加速到怠速行驶速度。
+ * 离合接合时引擎转速直接反映传动系输入轴转速，允许被拖到怠速以下并随车速回升。
+ * 制动踏板或手刹有效时怠速蠕行扭矩归零。
  */
 UCLASS(
 	Blueprintable,
@@ -82,9 +85,24 @@ public:
 	float EngineBrakeEffect = 150.0f;
 
 	/**
+	 * 怠速蠕行扭矩比例（相对最大扭矩）
+	 *
+	 * 挂挡且未踩制动/油门时，按该比例输出蠕行扭矩推动载具，目标为怠速对应的车速；
+	 * 扭矩随转速差成比例衰减，并随油门线性淡出；制动踏板或手刹有效时归零。
+	 * 0 表示关闭蠕行。
+	 */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "引力奇点引擎组件|动力学",
+		meta = (DisplayName = "怠速蠕行扭矩比例", ClampMin = "0", ClampMax = "1", UIMin = "0", UIMax = "1")
+	)
+	float IdleCreepTorqueRatio = 0.15f;
+
+	/**
 	 * 空挡/离合分离时的最大升速速率（RPM/s）
 	 *
-	 * 仅约束自由转速，接合时转速由传动系决定；0 表示不限制。
+	 * 仅约束无负载自由转速；直连接合时转速由传动系决定。0 表示不限制。
 	 */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -94,7 +112,7 @@ public:
 	)
 	float EngineRevUpRate = 5000.0f;
 
-	/** 空挡/离合分离时的最大降速速率（RPM/s），0 表示不限制 */
+	/** 空挡/离合分离时的最大降速速率（RPM/s）；0 表示不限制 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

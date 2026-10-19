@@ -5,6 +5,12 @@
 
 #include "Core/SingularisMorphVehicleTransmissionShift.h"
 
+namespace SingularisMorphVehicleControlNames
+{
+	/** 系统控制输入：请求变速箱立即回到空挡（布尔脉冲，消费后清除） */
+	inline const FName TransmissionNeutral(TEXT("TransmissionNeutral"));
+}
+
 /**
  * 引力奇点变速箱模拟模块。
  *
@@ -16,6 +22,11 @@
  * 无法解析原动机时逐物理步重试；原动机最大转速无效时保留当前设置，
  * 待原动机转速区间变化后重新计算。转速区间过小时仍按实际范围写入安全边界。
  *
+ * 载具创建时默认处于空挡。自动变速箱不会在无驾驶请求时自动挂入 1 挡：
+ * 只有油门超过起步阈值或存在倒挡请求时才从空挡挂入对应方向，前进/倒挡齿比无效时
+ * 保持空挡。强制空挡输入（SingularisMorphVehicleControlNames::TransmissionNeutral）
+ * 立即写入空挡并跳过本步状态机，供外部显式请求空挡（例如停车）。
+ *
  * 官方模块在空挡（齿比为 0）时跳过 TransmitTorque，直接扭矩子节点会保留上一挡的
  * DriveTorque；本模块在每步模拟前清零直接扭矩子节点，并在本步未传递有效扭矩时
  * 递归清零下游残留，避免空挡持续加速与倒挡反向失控。
@@ -25,7 +36,7 @@
  * 保持旧转速，会把原动机转速钳回旧值，使空挡油门无法提升转速。
  *
  * 自动倒挡按变速箱类型固定：自动变速箱在存在有效倒挡与主减速比时启用，手动变速箱
- * 始终禁用。该逻辑直接改写 TargetGear，绕过 SetGear 的空挡过渡，在手动档按住油门
+ * 始终禁用。该逻辑直接改写 TargetGear，绕过 SetGear 的空挡过渡，在手动挡按住油门
  * 换挡时会把目标挡位推过空挡（1→N 变成 1→R、R→N 跳过 N 直接进 2 挡）；手动方向只由
  * ChangeUp/ChangeDown 脉冲逐挡决定。自动变速箱没有有效倒挡或主减速比为零时同样禁用，
  * 避免目标挡位被夹成空挡后又被自动逻辑升回前进挡。该行为不再作为组件配置暴露。

@@ -113,18 +113,24 @@ private:
 /**
  * 引力奇点引擎模拟模块。
  *
- * 在官方引擎模块之上补齐三处行为：
+ * 在官方引擎模块之上补齐以下行为：
  * 最大转速前按比例线性收油，避免官方模块在最大转速处断油与制动交替造成的转速抖动；
+ * 超速制动并入净扭矩连续施加，不再以子节点扭矩硬覆盖，避免极速附近出现顿挫；
  * 松油门时把随转速缩放的负扭矩作为驱动力矩下推，使挂挡滑行经传动系产生引擎制动，
  * 空挡时则只降低引擎自身转速；
- * 倒挡传动系角速度为负，而引擎实际仍正转，转速耦合后取绝对值，
- * 避免怠速钳制把倒挡行驶时的引擎转速固定在怠速。
+ * 挂挡且未踩制动/油门时输出怠速蠕行扭矩：输入轴转速低于怠速对应转速时按差值成比例
+ * 推动传动系，达到怠速转速后扭矩归零，使载具在挡位中能够自行加速到怠速行驶速度；
+ * 制动踏板或手刹有效时蠕行扭矩归零，避免主动驱动与制动对抗；
+ * 倒挡传动系角速度为负，而引擎实际仍正转，转速耦合后取绝对值。
+ *
+ * 离合接合时引擎转速直接取传动系输入轴转速，允许低于怠速；载具在蠕行扭矩下
+ * 加速时转速随车速逐步回升至怠速。只有空挡或离合分离时，自由转速才钳制在怠速以上。
  *
  * 空挡与离合分离时的自由转速由离合器/变速箱的输入轴跟踪保证：无负载时输入轴转速
  * 会同步为原动机转速，因此引擎的转速耦合不会把自身积分结果钳回旧值。
  *
- * 自由升速/降速还受最大转速变化率限制，避免低转动惯量配置下转速在数帧内冲到红区；
- * 该限制只作用于空挡/离合分离的自由转速，接合时仍由传动系决定转速。
+ * 自由升速/降速受最大转速变化率限制，避免低转动惯量配置下转速在数帧内冲到红区；
+ * 直连接合时转速仍由传动系决定。
  */
 class SINGULARISMORPHVEHICLE_API FSingularisMorphEngineSimModule : public Chaos::FEngineSimModule
 {
@@ -132,7 +138,8 @@ public:
 	explicit FSingularisMorphEngineSimModule(
 		const Chaos::FEngineSettings& Settings,
 		float InRevUpRateRPM = 5000.0f,
-		float InRevDownRateRPM = 4000.0f
+		float InRevDownRateRPM = 4000.0f,
+		float InIdleCreepTorqueRatio = 0.0f
 	)
 		: FEngineSimModule(Settings),
 		  RevUpRateOmega(
@@ -143,6 +150,11 @@ public:
 		  RevDownRateOmega(
 			  FMath::IsFinite(InRevDownRateRPM)
 				  ? Chaos::RPMToOmega(FMath::Max(InRevDownRateRPM, 0.0f))
+				  : 0.0f
+		  ),
+		  IdleCreepTorqueRatio(
+			  FMath::IsFinite(InIdleCreepTorqueRatio)
+				  ? FMath::Clamp(InIdleCreepTorqueRatio, 0.0f, 1.0f)
 				  : 0.0f
 		  )
 	{
@@ -163,8 +175,25 @@ private:
 	/** 空挡自由降速的最大角速度变化率（rad/s²）；0 表示不限制 */
 	float RevDownRateOmega = 0.0f;
 
+	/** 怠速蠕行扭矩占最大扭矩的比例；0 表示关闭 */
+	float IdleCreepTorqueRatio = 0.0f;
+
 	/** 动力链是否挂有可驱动车轮（离合器接合且变速箱不在空挡） */
 	bool IsDrivelineConnected(Chaos::FSimModuleTree& VehicleModuleSystem) const;
+
+	/**
+	 * 传动系输入轴角速度（优先取变速箱输入轴，无变速箱时取直接子节点平均）。
+	 * 齿比符号使前进/倒挡在各自挡位方向上为正，反向滑行为负。
+	 */
+	float GetDrivelineAngularVelocity(const Chaos::FSimModuleTree& VehicleModuleSystem) const;
+
+	/** 沿扭矩链查找变速箱并读取其输入轴角速度 */
+	bool FindDrivelineInputVelocity(
+		const Chaos::FSimModuleTree& VehicleModuleSystem,
+		int32 ParentIndex,
+		int32 Depth,
+		float& OutVelocity
+	) const;
 
 	/** 从 ParentIndex 沿扭矩子节点向下查找车轮 */
 	bool HasLoadedDriveline(

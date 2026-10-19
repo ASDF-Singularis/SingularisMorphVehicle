@@ -135,11 +135,16 @@ Chaos::ISimulationModuleBase* USingularisEngineComponent::CreateNewCoreModule() 
 		                                   ? FMath::Max(EngineRevDownRate, 0.0f)
 		                                   : 0.0f;
 
-	// 3) 创建引擎仿真模块（软转速限制器、引擎制动、空挡自由转速与升降速速率限制）
+	const float SanitizedCreepTorqueRatio = FMath::IsFinite(IdleCreepTorqueRatio)
+		                                        ? FMath::Clamp(IdleCreepTorqueRatio, 0.0f, 1.0f)
+		                                        : 0.0f;
+
+	// 3) 创建引擎仿真模块（软转速限制器、引擎制动、怠速蠕行、空挡自由转速与升降速速率限制）
 	Chaos::ISimulationModuleBase* Engine = new FSingularisMorphEngineSimModule(
 		Settings,
 		SanitizedRevUpRate,
-		SanitizedRevDownRate
+		SanitizedRevDownRate,
+		SanitizedCreepTorqueRatio
 	);
 
 	return Engine;

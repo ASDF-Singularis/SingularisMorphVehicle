@@ -27,6 +27,7 @@
 #include "Components/SingularisWheelComponent.h"
 #include "Core/SingularisMorphVehicleSimulationCU.h"
 #include "Core/SingularisMorphVehicleSuspensionSimModule.h"
+#include "Core/SingularisMorphVehicleTransmissionSimModule.h"
 #include "Interfaces/SingularisMorphVehicleSUInterface.h"
 #include "Objects/SingularisMorphVehiclePhysicsAdapter.h"
 #include "Subsystems/SingularisMorphVehicleMappingSubsystem.h"
@@ -177,6 +178,7 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 
 	// 默认控制输入集：覆盖 ChaosVehicles 各模拟模块读取的全部控制输入名，
 	// 用户可在编辑器中增删；缺失的输入名会导致对应模块读取失败。
+	// TransmissionNeutral 为系统复位通道，AssimilateComponentInputs 会兜底保证其存在。
 	InputConfig =
 	{
 		{Chaos::ThrottleControlName, EModuleInputValueType::MAxis1D},
@@ -190,7 +192,8 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 		{Chaos::YawControlName, EModuleInputValueType::MAxis1D},
 		{Chaos::ReverseControlName, EModuleInputValueType::MBoolean},
 		{Chaos::ChangeUpControlName, EModuleInputValueType::MBoolean},
-		{Chaos::ChangeDownControlName, EModuleInputValueType::MBoolean}
+		{Chaos::ChangeDownControlName, EModuleInputValueType::MBoolean},
+		{SingularisMorphVehicleControlNames::TransmissionNeutral, EModuleInputValueType::MBoolean}
 	};
 }
 
@@ -270,7 +273,7 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	// 4) 终止适配器（解绑事件）
 	if (PhysicsAdapter) PhysicsAdapter->Terminate();
 
-	// 5) 复位跨世的缓存状态：物理状态重建后新建的变速箱从默认挡位起步，
+	// 5) 复位跨世的缓存状态：物理状态重建后新建的变速箱从空挡起步，
 	//    沿用上一世代的缓存会让首个 SetGearInput 产生错误方向的脉冲
 	CachedPhysicsProxy = nullptr;
 	CurrentGear = 0;
@@ -281,6 +284,7 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	LastGearPulseOutputTimestamp = INDEX_NONE;
 	LastGearPulseOutput = nullptr;
 	bWarnedAutomaticGearInput = false;
+	bNeutralGearRequested = false;
 	LastEngagedGear = 0;
 	bHasGearShiftBaseline = false;
 	SlippingWheelGuids.Empty();
@@ -768,8 +772,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 		if (DrivelineMaxOmega > 0.0f && TopGearRatio > KINDA_SMALL_NUMBER)
 		{
-			// 10% 余量：确保引擎能进入限速区间，由转速限制器而非车轮上限截止
-			const float MaxWheelOmega = DrivelineMaxOmega / TopGearRatio * 1.1f;
+			// 30% 余量：车轮上限只作为机械安全兜底，常规极速由原动机软限速器控制。
+			// 余量过小时车轮会先于原动机被硬钳制，轮胎转速与车身速度反复错位，
+			// 在极速附近形成明显顿挫；保留更大余量可避免车轮限速参与常规控速。
+			const float MaxWheelOmega = DrivelineMaxOmega / TopGearRatio * 1.3f;
 			for (USingularisMorphVehicleBaseComponent* WheelSU : Wheels)
 			{
 				if (auto* Wheel = Cast<USingularisWheelComponent>(WheelSU))
@@ -1536,10 +1542,15 @@ void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 		if (const USingularisTransmissionComponent* TransmissionSU =
 			Owner->FindComponentByClass<USingularisTransmissionComponent>())
 		{
-			// 自动变速箱不消费升降挡脉冲：写入目标会让 Update 每帧发脉冲却无人处理。
-			// 尤其是目标 0（空挡）永远无法到达，载具实际仍在前进挡
 			if (TransmissionSU->TransmissionType == ESingularisMorphVehicleTransmissionType::Automatic)
 			{
+				// 自动变速箱不消费升降挡脉冲：除空挡外，写入目标会让 Update 每帧发脉冲却无人处理
+				if (Gear == 0)
+				{
+					ResetTransmissionToNeutral();
+					return;
+				}
+
 				// 每个实例只告警一次，避免上层逐帧调用刷屏
 				if (!bWarnedAutomaticGearInput)
 				{
@@ -1549,9 +1560,10 @@ void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 						LogSingularisMorphVehicle,
 						Warning,
 						TEXT(
-							"[%s] SetGearInput is ignored: automatic transmission does not consume shift pulses"
+							"[%s] SetGearInput(%d) is ignored: automatic transmissions only accept neutral (0) requests"
 						),
-						*GetName()
+						*GetName(),
+						Gear
 					);
 				}
 
@@ -1568,6 +1580,19 @@ void USingularisMorphVehicleSimulationComponent::SetGearInput(const int32 Gear)
 
 	// 仅记录目标挡位，换挡脉冲由 Update 逐帧产出：变速箱一次只接受一挡（目标挡位 ±1）
 	TargetGearInput = FMath::Clamp(Gear, MinGear, MaxGear);
+}
+
+void USingularisMorphVehicleSimulationComponent::ResetTransmissionToNeutral()
+{
+	// 取消尚未完成的挡位请求，避免复位后仍被逐帧脉冲拉回目标挡
+	TargetGearInput = INDEX_NONE;
+	PendingGearPulseTarget = INDEX_NONE;
+	PendingGearPulseTimeout = 0.0f;
+	bNeutralGearRequested = true;
+
+	// 输入生产者可能尚未随物理状态建立；请求保留在标志中，由 Update 逐帧补发
+	if (InputProducer)
+		SetInputBool(SingularisMorphVehicleControlNames::TransmissionNeutral, true);
 }
 
 void USingularisMorphVehicleSimulationComponent::SetControlEnabled(
@@ -1670,6 +1695,9 @@ void USingularisMorphVehicleSimulationComponent::SetLocallyControlled(const bool
 
 void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime)
 {
+	// 0) 强制空挡请求优先于手动挡位请求：异步输出确认空挡前持续补发
+	UpdateNeutralGearRequest();
+
 	if (TargetGearInput == INDEX_NONE) return;
 
 	// 1) 换挡决策只读取最新物理输出，而非插值显示的 CurrentGear：
@@ -1686,14 +1714,7 @@ void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime)
 	if (LatestGear == INDEX_NONE) return;
 
 	// 2) 解析变速箱模块：挡位上限、换挡时间与手动/自动类型均以模拟模块设置为准
-	const Chaos::FTransmissionSimModule* Transmission = nullptr;
-	for (const TPair<int32, Chaos::ISimulationModuleBase*>& Pair : GuidToCoreModule)
-	{
-		if (!Pair.Value || !Pair.Value->IsSimType<Chaos::FTransmissionSimModule>()) continue;
-
-		Transmission = Pair.Value->Cast<Chaos::FTransmissionSimModule>();
-		if (Transmission) break;
-	}
+	const Chaos::FTransmissionSimModule* Transmission = FindTransmissionModule();
 	if (!Transmission) return;
 
 	if (Transmission->Setup().TransmissionType != Chaos::FTransmissionSettings::ETransType::ManualType)
@@ -1755,6 +1776,49 @@ void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime)
 	PendingGearPulseTimeout = FMath::Max(GearChangeTime * 2.0f + 0.5f, 0.5f);
 	LastGearPulseOutputTimestamp = LatestAsyncOutputTimestamp;
 	LastGearPulseOutput = DecisionOutput;
+}
+
+void USingularisMorphVehicleSimulationComponent::UpdateNeutralGearRequest()
+{
+	if (!bNeutralGearRequested) return;
+
+	// 输入生产者尚未创建时保留请求，待首次产出前补发
+	if (!InputProducer) return;
+
+	// 模拟树尚未建立时保留请求，避免复位请求恰好发生在拓扑重建期间而丢失；
+	// 树已建立但没有变速箱时请求无消费方，直接结束。变速箱输出尚未到达时继续补发
+	if (GuidToCoreModule.IsEmpty()) return;
+
+	if (!FindTransmissionModule())
+	{
+		bNeutralGearRequested = false;
+		return;
+	}
+
+	const FSingularisMorphVehicleAsyncOutput* DecisionOutput = NextAsyncOutput
+		                                                           ? NextAsyncOutput
+		                                                           : CurrentAsyncOutput;
+	if (GetLatestTransmissionGear(DecisionOutput, CurrentAsyncDataType, GuidToCoreModule) == 0)
+	{
+		bNeutralGearRequested = false;
+		return;
+	}
+
+	SetInputBool(SingularisMorphVehicleControlNames::TransmissionNeutral, true);
+}
+
+const Chaos::FTransmissionSimModule* USingularisMorphVehicleSimulationComponent::FindTransmissionModule() const
+{
+	for (const TPair<int32, Chaos::ISimulationModuleBase*>& Pair : GuidToCoreModule)
+	{
+		if (!Pair.Value || !Pair.Value->IsSimType<Chaos::FTransmissionSimModule>()) continue;
+
+		if (const Chaos::FTransmissionSimModule* Transmission =
+			Pair.Value->Cast<Chaos::FTransmissionSimModule>())
+			return Transmission;
+	}
+
+	return nullptr;
 }
 
 void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
@@ -2547,11 +2611,22 @@ void USingularisMorphVehicleSimulationComponent::AssimilateComponentInputs(
 		}
 	}
 
-	// 3) 换挡脉冲必须"消费即清零"：一次游戏帧内物理线程会执行多个子步，
+	// 3) 系统通道不依赖组件或蓝图配置：旧资产序列化的 InputConfig 不含新增通道，
+	//    若只依赖构造默认值，强制空挡请求会因名称缺失而静默失效
+	AddConfigUnique(
+		FModuleInputSetup(
+			SingularisMorphVehicleControlNames::TransmissionNeutral,
+			EModuleInputValueType::MBoolean
+		)
+	);
+
+	// 4) 换挡脉冲必须"消费即清零"：一次游戏帧内物理线程会执行多个子步，
 	//    不清零会让变速箱在每个子步各换一挡，按一次换挡实际跳多挡
 	for (FModuleInputSetup& Setup : OutCombinedInputs)
 	{
-		if (Setup.Name == Chaos::ChangeUpControlName || Setup.Name == Chaos::ChangeDownControlName)
+		if (Setup.Name == Chaos::ChangeUpControlName
+			|| Setup.Name == Chaos::ChangeDownControlName
+			|| Setup.Name == SingularisMorphVehicleControlNames::TransmissionNeutral)
 			Setup.bClearAfterConsumed = true;
 	}
 }
@@ -2639,6 +2714,11 @@ void USingularisMorphVehicleSimulationComponent::ApplyControlGates()
 
 	for (const FName& ControlName : DisabledControlNames)
 	{
+		// 空挡复位是系统通道，不受玩家控制闸门影响；否则 SetAllControlsEnabled(false)
+		// 会同时压掉显式复位请求，使 ResetTransmissionToNeutral 静默失效
+		if (ControlName == SingularisMorphVehicleControlNames::TransmissionNeutral)
+			continue;
+
 		const int32* Index = InputNameMap.Find(ControlName);
 		if (!Index || !InputValues.IsValidIndex(*Index)) continue;
 
@@ -2770,14 +2850,16 @@ void USingularisMorphVehicleSimulationComponent::BroadcastDiscreteOutputEvents()
 {
 	// 1) 换挡事件：挡位缓存咬合非空挡位且与上次事件挡位不同时广播。
 	//    a) 空挡（0）为换挡过渡态，不构成换挡事件
-	//    b) 首次收到挡位输出只建立基准不广播，避免变速箱初始挡位被误判为换挡
+	//    b) 首次挡位输出只建立基准；初始挡位已固定为空挡，首次挂入方向挡仍须广播
 	//    c) 挡位缓存在本帧 ParallelUpdate 更新，边沿检测天然幂等，物理停摆帧不重复广播
-	if (bHasGearData && CurrentGear != 0)
+	if (bHasGearData)
 	{
-		if (bHasGearShiftBaseline && LastEngagedGear != CurrentGear)
+		if (bHasGearShiftBaseline && CurrentGear != 0 && LastEngagedGear != CurrentGear)
 			OnGearShiftedEvent.Broadcast(LastEngagedGear, CurrentGear);
 
-		LastEngagedGear = CurrentGear;
+		if (CurrentGear != 0)
+			LastEngagedGear = CurrentGear;
+
 		bHasGearShiftBaseline = true;
 	}
 

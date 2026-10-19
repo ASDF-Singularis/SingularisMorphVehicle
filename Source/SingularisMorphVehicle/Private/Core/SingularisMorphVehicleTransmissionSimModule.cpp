@@ -14,6 +14,9 @@ namespace
 	/** 下游驱动力矩清理的递归深度上限，避免异常树结构造成无限递归 */
 	constexpr auto MaxDownstreamClearDepth = 32;
 
+	/** 自动变速箱从空挡挂入起步挡所需的最小油门 */
+	constexpr auto AutoDriveThrottleThreshold = 0.01f;
+
 	/** 将浮点 RPM 写入 uint32 设置前的安全转换 */
 	uint32 ToRPMValue(const float RPM)
 	{
@@ -67,9 +70,14 @@ FSingularisMorphTransmissionSimModule::FSingularisMorphTransmissionSimModule(
 		|| !bHasValidFinalDrive)
 		SettingsRef.AutoReverse = false;
 
-	// 上游构造函数无条件把初始挡位设为 1；前进挡为空时 GetGearRatio(1) 会越界访问
-	if (SettingsRef.ForwardRatios.IsEmpty())
-		SetGear(0, true);
+	// 上游构造函数无条件把初始挡位设为 1。载具创建时应为空挡：
+	// 自动变速箱在无驾驶请求时保持空挡，踩下油门或请求倒挡后才挂入对应方向。
+	SetGear(0, true);
+
+	// 官方模块仅在输出阶段同步 PreviousGear；若不同步，首次输出会把 1→空挡
+	// 误报为一次换挡事件。此处用一次性输出同步基准，事件随临时数据丢弃。
+	Chaos::FTransmissionOutputData InitialOutputState;
+	InitialOutputState.FillOutputState(this);
 }
 
 void FSingularisMorphTransmissionSimModule::Simulate(
@@ -83,6 +91,12 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 	if (Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType
 		&& Setup().AutoReverse)
 		AccessSetup().AutoReverse = false;
+
+	const bool bAutomatic = Setup().TransmissionType == Chaos::FTransmissionSettings::AutomaticType;
+	const float NeutralRequest = Inputs.GetControls().GetMagnitude(
+		SingularisMorphVehicleControlNames::TransmissionNeutral
+	);
+	const bool bNeutralRequested = FMath::IsFinite(NeutralRequest) && NeutralRequest > 0.5f;
 
 	// 1) 换挡点随原动机配置动态校准，保证换装不同引擎后仍按同一换挡逻辑工作
 	UpdateShiftPoints(VehicleModuleSystem);
@@ -109,8 +123,49 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 	for (FTorqueSimModule* TorqueChild : TorqueChildren)
 		TorqueChild->SetDriveTorque(0.0f);
 
-	// 3) 官方自动/手动换挡状态机与扭矩传递
-	FTransmissionSimModule::Simulate(DeltaTime, Inputs, VehicleModuleSystem);
+	// 2b) 空挡制动残留不能继续回传给上游原动机
+	SetBrakingTorque(0.0f);
+
+	// 3) 空挡状态机：默认空挡下只有驾驶请求才挂入方向挡。
+	//    官方自动状态机在 CurrentGear == 0 时无条件 ChangeUp()，会让载具在无人驾驶时
+	//    自动挂入 1 挡，因此这里由本模块接管空挡起步决策。
+	if (bNeutralRequested)
+	{
+		// 强制空挡是显式复位动作：本步跳过官方状态机，
+		// 避免同一步内的油门或倒挡输入把刚复位的空挡立即覆盖
+		SetGear(0, true);
+	}
+	else if (bAutomatic && GetCurrentGear() == 0 && GetTargetGear() == 0)
+	{
+		const float RawThrottle = Inputs.GetControls().GetMagnitude(Chaos::ThrottleControlName);
+		const float Throttle = FMath::IsFinite(RawThrottle) ? FMath::Clamp(RawThrottle, 0.0f, 1.0f) : 0.0f;
+		const bool bReverseRequested = Inputs.GetControls().GetMagnitude(Chaos::ReverseControlName) > 0.5f;
+
+		// 齿比无效（齿比为零、缺挡或主减速比为零）时挂挡只会得到没有传动能力的挡位，
+		// 保持空挡并交由组件侧告警
+		const bool bCanDriveForward = FMath::Abs(GetGearRatio(1)) > SMALL_NUMBER;
+		const bool bCanDriveReverse = FMath::Abs(GetGearRatio(-1)) > SMALL_NUMBER;
+
+		// 立即挂入目标方向：空挡到起步挡若经过换挡时间，原动机在这段时间内按空挡
+		// 自由升速，挂入瞬间又会被传动系拉回车速对应转速，造成转速突变。倒挡优先于油门
+		if (bReverseRequested)
+		{
+			if (bCanDriveReverse)
+				SetGear(-1, true);
+		}
+		else if (Throttle > AutoDriveThrottleThreshold && bCanDriveForward)
+			SetGear(1, true);
+	}
+
+	// 空挡（含强制空挡请求）不运行官方状态机：自动挡的无人驾驶自动挂挡在此被拦截，
+	// 手动挡也不会在同一物理步消费并发的升降挡脉冲
+	const bool bHoldNeutral = bNeutralRequested
+		|| (bAutomatic && GetCurrentGear() == 0 && GetTargetGear() == 0);
+
+	if (bHoldNeutral)
+		DriveTorque = 0.0f;
+	else
+		FTransmissionSimModule::Simulate(DeltaTime, Inputs, VehicleModuleSystem);
 
 	// 输入扭矩由上游每个物理步重新写入；本步消费后清零，避免原动机被移除或停止写入时，
 	// 旧扭矩在挡位内被持续下推（倒挡会表现为持续反向加速）

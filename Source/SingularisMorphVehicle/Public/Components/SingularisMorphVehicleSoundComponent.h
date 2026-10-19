@@ -23,6 +23,7 @@ class USingularisMorphVehicleSimulationComponent;
  *
  * 推拉混合模型分工：
  * 拉路线——Tick 轮询仿真组件的连续状态（引擎转速/扭矩/车速/挡位），归一化后写入音频参数；
+ * 引擎转速按「0 → 最大转速」归一化（0 RPM 为 0、最大转速为 1）；
  * 推路线——订阅仿真组件的离散事件（换挡/车轮打滑开始与停止/悬挂触底）
  * 与载具根组件的碰撞事件，经触发参数一次性推送。
  * 仿真组件与音频组件均为显式引用装配（组件选择器指定），引用无效时组件保持静默，
@@ -91,7 +92,7 @@ public:
 	)
 	bool bAutoPlay = true;
 
-	/** RPM 归一分母回退值：仿真组件取不到引擎最大转速（手动注册/无原动机）时使用 */
+	/** RPM 归一化上限回退值：仿真组件取不到引擎最大转速（手动注册/无原动机）时使用 */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,
@@ -118,7 +119,7 @@ public:
 	)
 	float CollisionImpulseThreshold = 1000.0f;
 
-	/** RPM 参数名：归一化引擎转速 [0..1] */
+	/** RPM 参数名：归一化引擎转速 [0..1]（0 = 0 RPM，1 = 最大转速） */
 	UPROPERTY(
 		EditDefaultsOnly,
 		BlueprintReadOnly,

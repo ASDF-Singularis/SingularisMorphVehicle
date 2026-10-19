@@ -20,6 +20,7 @@ namespace Chaos
 	struct FWheelOutputData;
 	class FSimModuleTree;
 	class FSimTreeUpdates;
+	class FTransmissionSimModule;
 	class ISimulationModuleBase;
 }
 
@@ -486,7 +487,7 @@ private:
 	/** 本地控制回退标记（无 NetworkPhysicsComponent 时生效） */
 	bool bIsLocallyControlled = false;
 
-	/** 当前挡位（由变速箱输出缓存；0 表示尚未收到输出或正经过空挡换挡） */
+	/** 当前挡位（由变速箱输出缓存；0 表示空挡、换挡过渡或尚未收到输出） */
 	int32 CurrentGear = 0;
 
 	/** 是否已收到过变速箱输出：挡位未知时不产出换挡脉冲（否则会把变速箱的初始挡位误判为需要升降挡） */
@@ -513,6 +514,9 @@ private:
 
 	/** 自动变速拒绝手动换挡请求的告警是否已发出（避免逐帧调用刷屏） */
 	bool bWarnedAutomaticGearInput = false;
+
+	/** 强制空挡请求尚未被变速箱输出确认；Update 期间逐帧补发直到确认 */
+	bool bNeutralGearRequested = false;
 
 	/** 引擎转速（由引擎输出缓存） */
 	float EngineRPM = 0.0f;
@@ -741,7 +745,8 @@ public:
 	/**
 	 * 设置目标挡位（仅手动变速箱），越界请求按变速箱实际挡数钳制。
 	 *
-	 * 自动变速箱不消费升降挡脉冲，调用会被忽略并告警；挡位由自动换挡状态机决定。
+	 * 自动变速箱不消费升降挡脉冲：除 0（空挡）外调用会被忽略并告警，
+	 * 其余挡位由自动换挡状态机在全挡位范围内决定。
 	 */
 	UFUNCTION(
 		BlueprintCallable,
@@ -749,6 +754,21 @@ public:
 		meta = (DisplayName = "设置挡位输入")
 	)
 	void SetGearInput(int32 Gear);
+
+	/**
+	 * 立即请求变速箱回到空挡。
+	 *
+	 * 通过系统控制通道发送一次性脉冲，物理线程在下一步把当前/目标挡位置为 0
+	 * 并清除下游残留扭矩。由外部在需要时显式调用（例如停车）；
+	 * 请求会持续发送直到变速箱输出确认空挡，避免异步物理输出滞后导致请求丢失。
+	 * 同时取消尚未完成的挡位请求。
+	 */
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "引力奇点变型载具仿真组件|API",
+		meta = (DisplayName = "重置变速箱为空挡")
+	)
+	void ResetTransmissionToNeutral();
 
 	/**
 	 * 禁用/启用单个控制输入通道。
@@ -760,6 +780,7 @@ public:
 	 * 闸门在输入生产端生效：本地控制方禁用后的输入会随网络物理复制到其它端；
 	 * 服务器要单方面覆盖远端客户端已产出的输入，需在输入同步层另行处理。
 	 * 配置建立后传入未配置的通道名会被忽略并告警。
+	 * 系统空挡复位通道（TransmissionNeutral）不受闸门影响。
 	 */
 	UFUNCTION(
 		BlueprintCallable,
@@ -981,6 +1002,12 @@ private:
 
 	/** 将被禁控制通道的产出值压为对应类型的中性值（ProduceInput 收口处调用） */
 	void ApplyControlGates();
+
+	/** 发送强制空挡请求，并在变速箱输出确认空挡后结束请求 */
+	void UpdateNeutralGearRequest();
+
+	/** 查找当前变速箱模块（仅游戏线程映射表） */
+	const Chaos::FTransmissionSimModule* FindTransmissionModule() const;
 
 	/** 将动画数据应用到非骨骼可视化组件 */
 	void UpdateNonSkeletalAnimations();
