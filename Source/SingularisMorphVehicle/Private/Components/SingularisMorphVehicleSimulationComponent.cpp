@@ -158,7 +158,7 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 	SuspensionTraceCollisionResponses.SetResponse(ECC_Vehicle, ECR_Ignore);
 	SuspensionTraceCollisionResponses.SetResponse(ECC_EngineTraceChannel1, ECR_Ignore);
 
-	SimulatedWheelCollisionResponses.SetAllChannels(ECR_Ignore);
+	SimulatedWheelCollisionResponses.SetAllChannels(ECR_Block);
 
 	bUsingNetworkPhysicsPrediction = Chaos::FPhysicsSolverBase::IsNetworkPhysicsPredictionEnabled();
 	CurrentAsyncDataType = AsyncInvalid;
