@@ -21,6 +21,7 @@ void FSingularisMorphClutchSimModule::Simulate(
 	if (SelfIndex < 0 || !VehicleModuleSystem.IsValidNode(SelfIndex))
 	{
 		Engagement = 0.0f;
+		DriveTorque = 0.0f;
 		return;
 	}
 

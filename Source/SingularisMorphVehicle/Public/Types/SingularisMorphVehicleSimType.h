@@ -36,6 +36,14 @@ struct FSingularisMorphVehicleComponentData
 	TWeakObjectPtr<USingularisUprightComponent> MatchedUpright = nullptr;
 
 	/**
+	 * 建树时是否匹配过轮位槽位。
+	 *
+	 * 弱引用在槽位销毁后同样为空，无法与「从未匹配」区分；该标记用于在槽位
+	 * 消失但未找到新槽位时触发车轮模块替换，清除旧槽位配置。
+	 */
+	bool bHadMatchedUpright = false;
+
+	/**
 	 * 目标父模块 GUID（根节点为 INDEX_NONE）。
 	 *
 	 * 差量同步仅依据模块自身属性决定保留/替换；父节点变化通过树内重挂处理，

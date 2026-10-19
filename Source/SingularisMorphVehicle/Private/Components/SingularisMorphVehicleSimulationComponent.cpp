@@ -1055,10 +1055,16 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			Chaos::ISimulationModuleBase* const* ExistingModule =
 				Existing ? GuidToCoreModule.Find(Existing->Guid) : nullptr;
 
+			// 曾匹配的槽位已销毁且本次未找到新槽位：替换以清除旧槽位配置
+			const bool bLostMatchedUpright = Existing
+				&& Existing->bHadMatchedUpright
+				&& !Existing->MatchedUpright.IsValid();
+
 			if (!Existing || !ExistingModule || !*ExistingModule)
 				Entry.Status = EPlanStatus::Add;
 			else if (Existing->ProxyComponentToAnimate.Get() != static_cast<USceneComponent*>(Entry.ProxyComp)
 				|| Existing->MatchedUpright.Get() != Entry.MatchedUpright
+				|| bLostMatchedUpright
 				|| (*ExistingModule)->GetParticleIndex().Idx !=
 				(Entry.Entity ? Entry.Entity->ParticleIndex : Chaos::FUniqueIdx().Idx)
 				|| (*ExistingModule)->IsAnimationEnabled() != Entry.SU->GetAnimationEnabled())
@@ -1174,7 +1180,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 
 	// 15) 执行移除：计划外模块、替换项旧模块、失效映射键模块与未纳管模块。
 	//     逐个移除（终止回调释放外部资源、动画槽位让渡、映射清理）；
-	//     既有节点索引不因删除改变（槽位仅入空闲表复用），后续新增的绝对父索引仍有效
+	//     删除与重挂均以 GUID 解析，不依赖节点索引
 	TArray<int32> GuidsToRemove;
 	GuidsToRemove.Reserve(RemovedSUs.Num() + Plan.Num() + UnmanagedGuids.Num());
 	for (USingularisMorphVehicleBaseComponent* SUComp : RemovedSUs)
@@ -1306,6 +1312,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		CompData.Guid = CoreModule->GetGuid();
 		CompData.ProxyComponentToAnimate = Entry.ProxyComp;
 		CompData.MatchedUpright = Entry.MatchedUpright;
+		CompData.bHadMatchedUpright = Entry.MatchedUpright != nullptr;
 
 		// 树内实际父节点为根；真实父 GUID 由重挂阶段写入
 		CompData.ParentGuid = INDEX_NONE;
@@ -1679,7 +1686,7 @@ void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime)
 		return;
 
 	// 4) 待确认脉冲：输出到达待确认挡位即完成；超时后重新评估，
-	//    避免指令被 AutoReverse 等逻辑覆盖后永久等待
+	//    避免指令被其它换挡逻辑覆盖后永久等待
 	const auto SafeDeltaTime = FMath::IsFinite(DeltaTime) ? FMath::Max(DeltaTime, 0.0f) : 0.0f;
 
 	if (PendingGearPulseTarget != INDEX_NONE)
