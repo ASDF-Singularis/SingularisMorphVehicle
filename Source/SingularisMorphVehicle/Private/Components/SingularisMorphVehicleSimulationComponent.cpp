@@ -433,21 +433,39 @@ void USingularisMorphVehicleSimulationComponent::FinalizeModuleUpdates()
 	UE_LOG(
 		LogSingularisMorphVehicle,
 		Display,
-		TEXT("[FinalizeModuleUpdates] VehicleSimulationPT=%s, StoredTreeUpdates pending adds=%d"),
+		TEXT(
+			"[FinalizeModuleUpdates] VehicleSimulationPT=%s, pending adds=%d, reparents=%d, wheel limits=%d"
+		),
 		VehicleSimulationPT.IsValid() ? TEXT("valid") : TEXT("null"),
-		StoredTreeUpdates.GetNewModules().Num()
+		StoredTreeUpdates.GetNewModules().Num(),
+		StoredTreeReparents.Num(),
+		StoredWheelSpeedLimits.Num()
 	);
 
-	if (!StoredTreeUpdates.GetNewModules().IsEmpty() || !StoredTreeUpdates.GetDeletedModules().IsEmpty())
-	{
-		if (VehicleSimulationPT)
-			VehicleSimulationPT->AppendTreeUpdates(&StoredTreeUpdates);
+	const auto bHasStructureChanges = !StoredTreeUpdates.GetNewModules().IsEmpty()
+		|| !StoredTreeUpdates.GetDeletedModules().IsEmpty()
+		|| !StoredTreeReparents.IsEmpty();
+	const auto bHasWheelSpeedLimitChanges = !StoredWheelSpeedLimits.IsEmpty();
 
-		// 新增模块会使网络状态历史的模块布局失效，标记待重建
-		if (!StoredTreeUpdates.GetNewModules().IsEmpty())
+	if ((bHasStructureChanges || bHasWheelSpeedLimitChanges) && VehicleSimulationPT)
+	{
+		// 增删、重挂与运行期设置作为一次原子更新提交：物理线程先应用全部增删，
+		// 再解析父 GUID，最后把限速写入已存在的车轮模块
+		FSingularisMorphTreeUpdate Update;
+		Update.TreeUpdates = MoveTemp(StoredTreeUpdates);
+		Update.Reparents = MoveTemp(StoredTreeReparents);
+		Update.WheelSpeedLimits = MoveTemp(StoredWheelSpeedLimits);
+
+		VehicleSimulationPT->AppendTreeUpdates(&Update);
+
+		// 仅增删或重挂会改变网络状态历史的模块布局；车轮限速是运行期设置，
+		// 不改变模块集合与层级，无需重建复制结构
+		if (bHasStructureChanges)
 			bPendingReplicationStructureRebuild = true;
 
 		StoredTreeUpdates = Chaos::FSimTreeUpdates();
+		StoredTreeReparents.Reset();
+		StoredWheelSpeedLimits.Reset();
 	}
 
 	// 手动注册路径没有重建流程，根物理对象可能尚未绑定，
@@ -776,8 +794,47 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		}
 
 		TSet<USingularisMorphVehicleBaseComponent*> ConsumedUprights;
+		TSet<USingularisMorphVehicleBaseComponent*> HandledWheels;
+
+		// 1) 优先沿用上次匹配：集群子件顺序可能随引擎安装等拓扑变更而改变，
+		//    重新做贪心最近匹配会让相邻轮位互换槽位配置，进而触发不必要的车轮模块替换。
+		//    只要原槽位仍存在且轮胎仍在其匹配半径内，就保持原配对。
 		for (USingularisMorphVehicleBaseComponent* SUComp : Wheels)
 		{
+			const FSingularisMorphVehicleComponentData* Existing = ComponentToPhysicsObjects.Find(SUComp);
+			USingularisUprightComponent* PreviousUpright = Existing ? Existing->MatchedUpright.Get() : nullptr;
+			if (!PreviousUpright || ConsumedUprights.Contains(PreviousUpright)) continue;
+
+			const UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
+				SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
+			);
+			if (!ProxyComp) continue;
+
+			const int32 SlotIndex = Slots.IndexOfByPredicate(
+				[PreviousUpright](const FUprightSlot& Slot)
+				{
+					return Slot.UprightSU == PreviousUpright;
+				}
+			);
+			if (SlotIndex == INDEX_NONE) continue;
+
+			const float Radius = FMath::Max(Slots[SlotIndex].UprightSU->MatchRadius, 0.0f);
+			const float DistanceSq = FVector::DistSquared(
+				ProxyComp->GetComponentTransform().GetLocation(),
+				Slots[SlotIndex].SlotLocation
+			);
+			if (DistanceSq > Radius * Radius) continue;
+
+			WheelToUpright.Add(SUComp, PreviousUpright);
+			ConsumedUprights.Add(PreviousUpright);
+			HandledWheels.Add(SUComp);
+		}
+
+		// 2) 未沿用的车轮再做最近槽位匹配
+		for (USingularisMorphVehicleBaseComponent* SUComp : Wheels)
+		{
+			if (HandledWheels.Contains(SUComp)) continue;
+
 			// 无驱动组件的纯仿真车轮无法定位，保持自由轮
 			const UPrimitiveComponent* ProxyComp = Cast<UPrimitiveComponent>(
 				SUComp->DrivenComponent.GetComponent(SUComp->GetOwner())
@@ -833,8 +890,8 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 9) 装配计划：按链序展开全部计划模块及其目标父节点（父节点先于子节点）。
-	//    计划是差量比对与增量构建的唯一事实来源；父节点以 SU 指针表达，
-	//    具体树索引在构建期解析（现存父节点用其绝对索引，本次新建的父节点用批次局部索引）
+	//    计划是差量比对与拓扑同步的唯一事实来源；父节点以 SU 指针表达，
+	//    全部模块创建后再按模块 GUID 统一重挂，不依赖树索引或批次顺序
 	enum class EPlanStatus : uint8
 	{
 		Keep, // 保留：模块与粒子绑定均未变化，不重建
@@ -850,10 +907,15 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		UPrimitiveComponent* ProxyComp = nullptr; // 驱动组件解析结果
 		const FSingularisMorphVehiclePhysicsAdapterSnapshotEntity* Entity = nullptr;
 		EPlanStatus Status = EPlanStatus::Add;
+
+		/** 替换前模块的通用状态；同类型新模块创建后回填，避免动态状态重置 */
+		TSharedPtr<Chaos::FModuleNetData> PreservedState;
+
+		/** 被替换模块的模拟类型；类型变化时不做状态移植，避免跨类型写入 */
+		FName PreservedSimType = NAME_None;
 	};
 
 	TArray<FPlanEntry> Plan;
-	TMap<USingularisMorphVehicleBaseComponent*, int32> PlanIndexBySU;
 	{
 		auto FirstValidSU = [](
 			const std::initializer_list<USingularisMorphVehicleBaseComponent*> Candidates
@@ -877,7 +939,6 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			Entry.MatchedUpright = MatchedUpright;
 			Entry.ProxyComp = Cast<UPrimitiveComponent>(SUComp->DrivenComponent.GetComponent(SUComp->GetOwner()));
 			Entry.Entity = Entry.ProxyComp ? EntityMap.FindRef(Entry.ProxyComp) : nullptr;
-			PlanIndexBySU.Add(SUComp, Plan.Num());
 			Plan.Add(MoveTemp(Entry));
 		};
 
@@ -941,10 +1002,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	}
 
 	// 10) 差量分派：与现存模块逐一比对。
-	//     保留 = 模块存活且驱动组件、物理粒子索引、动画开关均未变化；
+	//     保留 = 模块存活且驱动组件、槽位配置源、物理粒子索引、动画开关均未变化；
 	//     新建 = 此前无模块；替换 = 任一属性变化（模块设置与粒子绑定在构建期固化，
-	//     无法原位修改，故「修改」表现为「先移除再新建」）；
-	//     计划外的现存模块、失效映射键（SU 随部件销毁）与未纳管模块一并移除
+	//     无法原位修改，故「修改」表现为「先移除再新建」）；父节点变化不触发替换，
+	//     由重挂阶段处理。计划外的现存模块、失效映射键与未纳管模块一并移除
 	TArray<USingularisMorphVehicleBaseComponent*> RemovedSUs;
 	TArray<TObjectPtr<UActorComponent>> StaleMapKeys;
 	TArray<int32> UnmanagedGuids;
@@ -997,11 +1058,12 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 			if (!Existing || !ExistingModule || !*ExistingModule)
 				Entry.Status = EPlanStatus::Add;
 			else if (Existing->ProxyComponentToAnimate.Get() != static_cast<USceneComponent*>(Entry.ProxyComp)
+				|| Existing->MatchedUpright.Get() != Entry.MatchedUpright
 				|| (*ExistingModule)->GetParticleIndex().Idx !=
 				(Entry.Entity ? Entry.Entity->ParticleIndex : Chaos::FUniqueIdx().Idx)
 				|| (*ExistingModule)->IsAnimationEnabled() != Entry.SU->GetAnimationEnabled())
 			{
-				// 驱动组件/粒子绑定/动画开关变化：替换以重建模块与动画槽位
+				// 驱动组件/槽位配置/粒子绑定/动画开关变化：替换以重建模块与动画槽位
 				Entry.Status = EPlanStatus::Replace;
 			}
 			else
@@ -1022,64 +1084,23 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		}
 	}
 
-	// 11) 父节点稳定性级联：保留模块的父模块必须同样保留且未被替换，否则级联替换。
-	//     计划链序保证父节点的最终状态先于子节点确定，单遍即可完成；
-	//     被移除/替换节点的子模块全部替换，不依赖树删除时的隐式重挂（避免悬垂挂接）
-	for (FPlanEntry& Entry : Plan)
+	// 10b) 保留车轮的有效转速上限原位更新。新建/替换模块在 CreateNewCoreModule 中
+	//      已读取最新上限；保留模块的设置已固化，只有直接写回模块设置才能生效。
+	//      若靠替换模块更新，会把角位置与动画槽位清零，重新引入轮胎闪烁。
+	for (const FPlanEntry& Entry : Plan)
 	{
-		if (Entry.Status != EPlanStatus::Keep || !Entry.ParentSU) continue;
+		if (Entry.Status != EPlanStatus::Keep) continue;
 
-		const int32* ParentPlanIdx = PlanIndexBySU.Find(Entry.ParentSU);
-		const FSingularisMorphVehicleComponentData* ParentData = ComponentToPhysicsObjects.Find(Entry.ParentSU);
-		const FSingularisMorphVehicleComponentData* EntryData = ComponentToPhysicsObjects.Find(Entry.SU);
+		const auto* WheelSU = Cast<USingularisWheelComponent>(Entry.SU);
+		const FSingularisMorphVehicleComponentData* Data = ComponentToPhysicsObjects.Find(Entry.SU);
+		if (!WheelSU || !Data) continue;
 
-		const bool bParentKept = ParentPlanIdx && Plan[*ParentPlanIdx].Status == EPlanStatus::Keep;
-		const bool bParentUnchanged = ParentData && EntryData && EntryData->ParentGuid == ParentData->Guid;
-
-		if (!bParentKept || !bParentUnchanged)
-			Entry.Status = EPlanStatus::Replace;
-	}
-
-	// 12) 绝对父索引可用性：新建/替换模块挂到「刚建未应用」的保留父模块时，
-	//     其真实树索引尚未经物理线程回传（SU 树索引为空），无法作为批次绝对父节点；
-	//     将父降级为替换即可让父子在本批次内以局部索引成链。迭代至不动点（链深有限）
-	for (auto bChanged = true; bChanged;)
-	{
-		bChanged = false;
-
-		for (const FPlanEntry& Entry : Plan)
-		{
-			if (Entry.Status != EPlanStatus::Add && Entry.Status != EPlanStatus::Replace) continue;
-			if (!Entry.ParentSU) continue;
-
-			const int32* ParentPlanIdx = PlanIndexBySU.Find(Entry.ParentSU);
-			if (!ParentPlanIdx) continue;
-
-			FPlanEntry& ParentEntry = Plan[*ParentPlanIdx];
-			if (ParentEntry.Status == EPlanStatus::Keep && Entry.ParentSU->GetTreeIndex() == INDEX_NONE)
-			{
-				ParentEntry.Status = EPlanStatus::Replace;
-				bChanged = true;
-			}
-		}
-
-		if (!bChanged) break;
-
-		// 降级为替换的父节点，其保留子节点同样级联替换
-		for (FPlanEntry& Entry : Plan)
-		{
-			if (Entry.Status != EPlanStatus::Keep || !Entry.ParentSU) continue;
-
-			const int32* ParentPlanIdx = PlanIndexBySU.Find(Entry.ParentSU);
-			if (ParentPlanIdx && Plan[*ParentPlanIdx].Status != EPlanStatus::Keep)
-				Entry.Status = EPlanStatus::Replace;
-		}
+		StoredWheelSpeedLimits.Add({Data->Guid, WheelSU->GetResolvedMaxRotationVel()});
 	}
 
 	// 车轮碰撞抑制对账（活动车轮集合 → 抑制/恢复）。
 	// 与拓扑是否变更无关：任何一帧都必须对账，否则外部（组件物理状态重建、载具逻辑）
-	// 恢复过的轮胎碰撞会在「无拓扑差异」帧被静默保留，重新成为解析悬挂之外的第二支撑。
-	// 定义为局部可复用体，供「无差异」早退路径与重建收尾路径共用
+	// 恢复过的轮胎碰撞会在「无拓扑差异」帧被静默保留，重新成为解析悬挂之外的第二支撑
 	const auto ReconcileActiveWheelCollision = [this, &Wheels]()
 	{
 		TSet<UPrimitiveComponent*> ActiveWheelComponents;
@@ -1098,24 +1119,27 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		ReconcileWheelCollisionSuppression(ActiveWheelComponents);
 	};
 
-	// 13) 无差异：全部保留且无移除项时跳过全部重建工作，仅对账车轮碰撞后返回
-	auto bHasBuilds = false;
-	for (const FPlanEntry& Entry : Plan)
+	// 11) 替换项状态移植：模块被替换时保留角速度、角位置、挡位与悬挂行程等动态状态。
+	//      新模块若从默认值起步，会在首帧输出把轮胎转角/悬挂压缩量拉回基准，表现为闪烁。
+	for (FPlanEntry& Entry : Plan)
 	{
-		if (Entry.Status != EPlanStatus::Keep)
-		{
-			bHasBuilds = true;
-			break;
-		}
+		if (Entry.Status != EPlanStatus::Replace) continue;
+
+		const FSingularisMorphVehicleComponentData* Existing = ComponentToPhysicsObjects.Find(Entry.SU);
+		if (!Existing) continue;
+
+		Chaos::ISimulationModuleBase* const* OldModule = GuidToCoreModule.Find(Existing->Guid);
+		if (!OldModule || !*OldModule) continue;
+
+		TSharedPtr<Chaos::FModuleNetData> State = (*OldModule)->GenerateNetData(0);
+		if (!State.IsValid()) continue;
+
+		State->FillNetState(*OldModule);
+		Entry.PreservedState = MoveTemp(State);
+		Entry.PreservedSimType = (*OldModule)->GetSimType();
 	}
 
-	if (!bHasBuilds && RemovedSUs.IsEmpty() && StaleMapKeys.IsEmpty() && UnmanagedGuids.IsEmpty())
-	{
-		ReconcileActiveWheelCollision();
-		return;
-	}
-
-	// 14) 裁剪静止基准缓存：仅保留本次快照仍存活的（驱动组件, 粒子）键。
+	// 12) 裁剪静止基准缓存：仅保留本次快照仍存活的（驱动组件, 粒子）键。
 	//     部件离开物理装配后其粒子不再存在，条目随之失效；部件重新加入装配时粒子已重建，
 	//     键不匹配而触发重新捕获，不会沿用陈旧基准
 	{
@@ -1135,7 +1159,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		PruneModuleRestPoses(LiveKeys);
 	}
 
-	// 15) 模块集合可能已变化（变形增删部件），刷新输入配置。
+	// 13) 模块集合可能已变化（变形增删部件），刷新输入配置。
 	//     配置未变更时该调用为空操作，不会清空输入容器。
 	SetupInputConfiguration();
 
@@ -1143,12 +1167,12 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		                                      ? PhysicsAdapter->GetReferenceTransform()
 		                                      : FTransform::Identity;
 
-	// 16) 缓存根物理对象（首次或重建时刷新）
+	// 14) 缓存根物理对象（首次或重建时刷新）
 	//     模块构造期需要 RootPhysicsObject 进行 OnConstruction_External 初始化
 	if (RootPhysicsObject == nullptr)
 		CacheRootPhysicsObject(GetPhysicsProxy());
 
-	// 17) 执行移除：计划外模块、替换项旧模块、失效映射键模块与未纳管模块。
+	// 15) 执行移除：计划外模块、替换项旧模块、失效映射键模块与未纳管模块。
 	//     逐个移除（终止回调释放外部资源、动画槽位让渡、映射清理）；
 	//     既有节点索引不因删除改变（槽位仅入空闲表复用），后续新增的绝对父索引仍有效
 	TArray<int32> GuidsToRemove;
@@ -1186,9 +1210,10 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 	for (const TObjectPtr<UActorComponent>& StaleKey : StaleMapKeys)
 		ComponentToPhysicsObjects.Remove(StaleKey);
 
-	// 18) 注册 Lambda：构建并登记单个计划条目对应的模块。
-	//     驱动组件/实体/槽位配置源已在计划阶段解析；父树索引由批处理阶段解析并传入
-	auto AddEntity = [&](const FPlanEntry& Entry, const int32 ParentIndex) -> int32
+	// 16) 注册 Lambda：构建并登记单个计划条目对应的模块。
+	//     驱动组件/实体/槽位配置源已在计划阶段解析；新模块一律以根入树，
+	//     父关系由构建完成后的统一重挂阶段按 GUID 建立。
+	auto AddEntity = [&](const FPlanEntry& Entry) -> int32
 	{
 		USingularisMorphVehicleBaseComponent* SUComp = Entry.SU;
 		if (!SUComp) return INDEX_NONE;
@@ -1209,6 +1234,11 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		// SU 的动画开关是模块动画的总开关：部分模块类型（引擎、变速箱等）
 		// 不自带动画而不会在 CreateNewCoreModule 中同步该标志，此处统一同步
 		CoreModule->SetAnimationEnabled(SUComp->GetAnimationEnabled());
+
+		// 替换项：同类型模块间移植动态状态（角速度/角位置/挡位/悬挂行程）。
+		// 类型不一致时放弃移植，避免向不兼容的模块写入状态
+		if (Entry.PreservedState.IsValid() && Entry.PreservedSimType == CoreModule->GetSimType())
+			Entry.PreservedState->FillSimState(CoreModule);
 
 		// 挂载立轴槽位的车轮：注入槽位配置（转向/轴向/反转/制动/辅助/力偏移）。
 		// 各项均由核心物理路径从模块设置读取，注入必须在入树前一次性完成
@@ -1244,7 +1274,7 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		const int32 ModuleIdx = AddModuleToTree(
 			CoreModule,
 			ComponentTransform,
-			ParentIndex,
+			INDEX_NONE,
 			TransformIndex,
 			Entry.Entity ? Chaos::FUniqueIdx(Entry.Entity->ParticleIndex) : Chaos::FUniqueIdx(),
 			RestTransform,
@@ -1275,124 +1305,62 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		FSingularisMorphVehicleComponentData CompData;
 		CompData.Guid = CoreModule->GetGuid();
 		CompData.ProxyComponentToAnimate = Entry.ProxyComp;
-		CompData.ParentGuid = Entry.ParentSU ? Entry.ParentSU->GetModuleGuid() : INDEX_NONE;
+		CompData.MatchedUpright = Entry.MatchedUpright;
+
+		// 树内实际父节点为根；真实父 GUID 由重挂阶段写入
+		CompData.ParentGuid = INDEX_NONE;
 		ComponentToPhysicsObjects.Add(SUComp, CompData);
 		PhysicsGuidToComponent.Add(CoreModule->GetGuid(), SUComp);
 
 		return ModuleIdx;
 	};
 
-	// 19) 新增/替换模块分批构建。
-	//     批次语义（FSimTreeUpdates）：仅每批首条可使用绝对树索引（现存父节点）或 -1（根），
-	//     其余条目必须引用同批内先前条目（局部索引）。故以「父节点为现存模块」为批次根，
-	//     父节点为本次新建/替换的条目并入其父所在批次，形成局部链。
-	//     父先于子的计划顺序保证批次根先于其后代，链式引用始终指向同批内已建条目
-	TArray<int32> BatchIdByPlanIndex;
-	BatchIdByPlanIndex.Init(INDEX_NONE, Plan.Num());
-	TArray<TArray<int32>> Batches;
-	for (auto I = 0; I < Plan.Num(); ++I)
+	// 17) 构建新增/替换模块。所有新模块先以根节点入树：
+	//     父子关系不再依赖批次局部索引，统一在全部模块创建后按 GUID 重挂。
+	for (FPlanEntry& Entry : Plan)
 	{
-		const FPlanEntry& Entry = Plan[I];
 		if (Entry.Status == EPlanStatus::Keep) continue;
+		AddEntity(Entry);
+	}
 
-		const int32* ParentPlanIdx = Entry.ParentSU ? PlanIndexBySU.Find(Entry.ParentSU) : nullptr;
-		const bool bParentInBatch = ParentPlanIdx && Plan[*ParentPlanIdx].Status != EPlanStatus::Keep;
+	// 18) 统一重挂父节点。
+	//     新增模块必须从根移动到目标父节点；保留模块仅在父节点实际变化时重挂。
+	//     这样安装引擎只会新增引擎并移动变速箱，轮轴/车轮/悬挂模块及其动态状态、
+	//     动画槽位全部原样保留，不再触发轮胎转角复位闪烁。
+	for (const FPlanEntry& Entry : Plan)
+	{
+		if (!Entry.SU || !Entry.ParentSU) continue;
 
-		if (!bParentInBatch)
+		FSingularisMorphVehicleComponentData* Data = ComponentToPhysicsObjects.Find(Entry.SU);
+		if (!Data) continue;
+
+		const int32 DesiredParentGuid = Entry.ParentSU->GetModuleGuid();
+		if (DesiredParentGuid == INDEX_NONE)
 		{
-			// 现存父节点（绝对索引）或根：本条目开启新批次
-			Batches.Add({I});
-			BatchIdByPlanIndex[I] = Batches.Num() - 1;
-			continue;
-		}
-
-		const int32 ParentBatchId = BatchIdByPlanIndex[*ParentPlanIdx];
-		ensureMsgf(
-			ParentBatchId != INDEX_NONE,
-			TEXT("[RebuildFromSnapshot] Parent build must precede child build in plan order")
-		);
-
-		if (ParentBatchId == INDEX_NONE)
-		{
-			// 计划顺序被破坏（不应发生）：跳过，避免以错误父节点入树
 			UE_LOG(
 				LogSingularisMorphVehicle,
-				Error,
-				TEXT("[RebuildFromSnapshot] Skipping module for %s - parent batch unresolved"),
-				*Entry.SU->GetName()
+				Warning,
+				TEXT("[RebuildFromSnapshot] %s has no valid parent module GUID - reparent skipped"),
+				*GetNameSafe(Entry.SU)
 			);
 			continue;
 		}
 
-		Batches[ParentBatchId].Add(I);
-		BatchIdByPlanIndex[I] = ParentBatchId;
+		// 新模块在树中的父节点是根，必须重挂；保留模块只在父 GUID 变化时重挂
+		const bool bRequiresReparent = Entry.Status != EPlanStatus::Keep
+			|| Data->ParentGuid != DesiredParentGuid;
+		if (bRequiresReparent)
+			StoredTreeReparents.Add({Data->Guid, DesiredParentGuid});
+
+		Data->ParentGuid = DesiredParentGuid;
 	}
 
-	TMap<USingularisMorphVehicleBaseComponent*, int32> LocalIndexBySU;
-	for (const TArray<int32>& Batch : Batches)
-	{
-		LocalIndexBySU.Reset();
-
-		for (int32 PlanIdx : Batch)
-		{
-			const FPlanEntry& Entry = Plan[PlanIdx];
-
-			// 解析父树索引：现存父节点用其绝对索引；本次新建/替换的父节点用本批局部索引
-			auto bCanBuild = true;
-			int32 ParentIndex = INDEX_NONE;
-			if (Entry.ParentSU)
-			{
-				const int32* ParentPlanIdx = PlanIndexBySU.Find(Entry.ParentSU);
-				if (ParentPlanIdx && Plan[*ParentPlanIdx].Status == EPlanStatus::Keep)
-				{
-					// 降级保障：保留父节点的绝对索引必定可用（INDEX_NONE 已在计划阶段降级）
-					ParentIndex = Entry.ParentSU->GetTreeIndex();
-					bCanBuild = ParentIndex != INDEX_NONE;
-				}
-				else if (const int32* LocalIdx = LocalIndexBySU.Find(Entry.ParentSU))
-					ParentIndex = *LocalIdx;
-				else
-				{
-					// 父节点未成功建入本批：子条目不可独立成根
-					bCanBuild = false;
-				}
-			}
-
-			if (!bCanBuild)
-			{
-				UE_LOG(
-					LogSingularisMorphVehicle,
-					Error,
-					TEXT("[RebuildFromSnapshot] No valid parent for %s - module skipped"),
-					*Entry.SU->GetName()
-				);
-				continue;
-			}
-
-			const int32 LocalIndex = AddEntity(Entry, ParentIndex);
-			if (LocalIndex != INDEX_NONE)
-				LocalIndexBySU.Add(Entry.SU, LocalIndex);
-		}
-
-		// 提交本批（首批同时携带本帧全部删除项：批次内先应用新增后应用删除，
-		// 新增引用的现存模块在删除前仍有效）
-		if (!StoredTreeUpdates.GetNewModules().IsEmpty() || !StoredTreeUpdates.GetDeletedModules().IsEmpty())
-		{
-			if (!StoredTreeUpdates.GetNewModules().IsEmpty())
-				bPendingReplicationStructureRebuild = true;
-
-			if (VehicleSimulationPT)
-				VehicleSimulationPT->AppendTreeUpdates(&StoredTreeUpdates);
-		}
-		StoredTreeUpdates = Chaos::FSimTreeUpdates();
-	}
-
-	// 20) 车轮碰撞对账：抑制活动轮胎的碰撞（解除其与地面的物理接触，避免成为解析悬挂之外的
+	// 19) 车轮碰撞对账：抑制活动轮胎的碰撞（解除其与地面的物理接触，避免成为解析悬挂之外的
 	//     第二支撑），恢复已分离轮胎的原始碰撞。以「活动集合 vs 已记录集合」对账，
 	//     天然覆盖共享组件（轮胎与悬挂常共用同一网格）、替换与组件销毁
 	ReconcileActiveWheelCollision();
 
-	// 21) 收尾：提交残余更新（仅移除项时无批次循环），刷新物理属性与复制结构标记
+	// 20) 收尾：提交本帧全部增删与重挂，刷新物理属性与复制结构标记
 	FinalizeModuleUpdates();
 }
 
@@ -2369,6 +2337,8 @@ void USingularisMorphVehicleSimulationComponent::DestroyVehicleSimulation()
 		ModuleAnimationSetups.Empty();
 	}
 	StoredTreeUpdates = Chaos::FSimTreeUpdates();
+	StoredTreeReparents.Reset();
+	StoredWheelSpeedLimits.Reset();
 
 	// 5) 物理线程可能正在执行在飞帧的 Simulate，
 	//    将物理线程端对象与模块树的销毁推迟到求解器命令队列执行，避免跨线程释放
@@ -2439,7 +2409,10 @@ void USingularisMorphVehicleSimulationComponent::ClearAllSimulationModules()
 	}
 	NextConstructionIndex = 0;
 
-	// 3) 提交删除到物理线程
+	// 3) 清除待提交的重挂与限速请求：模块已全部移除，二者已无意义；
+	//    删除请求仍与残余增删一并提交
+	StoredTreeReparents.Reset();
+	StoredWheelSpeedLimits.Reset();
 	FinalizeModuleUpdates();
 
 	// 4) 恢复全部被抑制的车轮碰撞：模块已全部清除，无车轮处于模拟状态

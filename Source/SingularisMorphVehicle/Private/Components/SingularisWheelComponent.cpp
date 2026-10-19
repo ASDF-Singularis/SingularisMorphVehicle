@@ -48,7 +48,7 @@ Chaos::ISimulationModuleBase* USingularisWheelComponent::CreateNewCoreModule() c
 	Settings.Radius = FMath::Max(WheelRadius, 1.0f);
 	Settings.Width = FMath::Max(WheelWidth, 0.0f);
 	Settings.WheelInertia = Chaos::M2ToCm2(FMath::Max(WheelInertia, KINDA_SMALL_NUMBER));
-	Settings.MaxRotationVel = FMath::Max(FMath::Max(MaxRotationVel, 0.0f), EffectiveMaxRotationVel);
+	Settings.MaxRotationVel = GetResolvedMaxRotationVel();
 	Settings.FrictionMultiplier = FMath::Max(FrictionMultiplier, 0.0f);
 	Settings.LateralSlipGraphMultiplier = LateralSlipGraphMultiplier;
 	for (const FVector2D& Point : LateralSlipGraph)

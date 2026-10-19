@@ -8,6 +8,7 @@
 #include "Chaos/ParticleHandleFwd.h"
 #include "SimModule/SimModuleTree.h"
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
+#include "Types/SingularisMorphVehicleTreeUpdate.h"
 
 struct FSingularisMorphVehicleAsyncInput;
 struct FSingularisMorphChaosSimModuleManagerAsyncOutput;
@@ -103,7 +104,7 @@ public:
 		TestInputBufferStartFrame = InTestInputBufferStartFrame;
 	}
 
-	void AppendTreeUpdates(Chaos::FSimTreeUpdates* InNextTreeUpdatesInternal);
+	void AppendTreeUpdates(FSingularisMorphTreeUpdate* InUpdate);
 	void ActionTreeUpdates();
 
 	/** 生成网络复制结构 */
@@ -189,7 +190,7 @@ public:
 	bool ImplementsLoopingTestBuffer() { return bIsLoopingTestInputBuffer; }
 
 	TArray<FModuleInputContainer> TestInputBuffer;
-	TArray<Chaos::FSimTreeUpdates> NextTreeUpdatesInternal;
+	TArray<FSingularisMorphTreeUpdate> NextTreeUpdatesInternal;
 	TArray<Chaos::FCreatedModule> NewlyCreatedModuleGuids;
 
 	/** 缓存的根粒子句柄 */

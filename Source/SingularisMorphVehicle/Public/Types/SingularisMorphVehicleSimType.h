@@ -4,6 +4,7 @@
 #include <Components/PrimitiveComponent.h>
 #include <Components/SceneComponent.h>
 #include <UObject/ObjectPtr.h>
+#include <UObject/WeakObjectPtrTemplates.h>
 
 #include "SingularisMorphSimModuleManagerAsyncCallback.h"
 #include "SingularisMorphVehicleSimType.generated.h"
@@ -12,6 +13,8 @@
  * 引力奇点变型载具组件数据。
  * 将场景组件映射至模拟 GUID、父模块 GUID 与可选的动画视觉组件。
  */
+class USingularisUprightComponent;
+
 USTRUCT()
 struct FSingularisMorphVehicleComponentData
 {
@@ -25,10 +28,18 @@ struct FSingularisMorphVehicleComponentData
 	TObjectPtr<USceneComponent> ProxyComponentToAnimate = nullptr;
 
 	/**
-	 * 建立时该模块的父模块 GUID（根节点为 INDEX_NONE）。
+	 * 建树时使用的轮位槽位配置源（非车轮为空）。
 	 *
-	 * 差量重建以「计划父模块 GUID == 记录父模块 GUID」判定父节点稳定性：
-	 * 父模块被移除或替换时子模块级联替换，不依赖树删除时的隐式重挂。
+	 * 槽位持有转向、轴向、反转、制动与辅助系统配置；槽位更换必须重建车轮模块，
+	 * 否则旧模块会继续使用上一槽位的设置。弱引用不延长槽位生命周期。
+	 */
+	TWeakObjectPtr<USingularisUprightComponent> MatchedUpright = nullptr;
+
+	/**
+	 * 目标父模块 GUID（根节点为 INDEX_NONE）。
+	 *
+	 * 差量同步仅依据模块自身属性决定保留/替换；父节点变化通过树内重挂处理，
+	 * 不再级联替换子树。
 	 */
 	int32 ParentGuid = INDEX_NONE;
 };

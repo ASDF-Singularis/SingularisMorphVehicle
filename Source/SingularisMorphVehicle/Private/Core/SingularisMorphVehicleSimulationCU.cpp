@@ -78,17 +78,24 @@ void FSingularisMorphVehicleSimulation::Terminate()
 
 	RootParticle = nullptr;
 	SimModuleTree.Reset(nullptr);
+
+	// 树已销毁：待提交的增删/重挂/限速与新建事件不再有意义，
+	// 残留会在同一对象重新 Initialize 时被应用到新树
+	NextTreeUpdatesInternal.Empty();
+	NewlyCreatedModuleGuids.Empty();
 }
 
-void FSingularisMorphVehicleSimulation::AppendTreeUpdates(Chaos::FSimTreeUpdates* InNextTreeUpdatesInternal)
+void FSingularisMorphVehicleSimulation::AppendTreeUpdates(FSingularisMorphTreeUpdate* InUpdate)
 {
 	Chaos::EnsureIsInGameThreadContext();
 
-	if (InNextTreeUpdatesInternal == nullptr)
+	if (!InUpdate)
 		return;
 
+	// 增删、重挂与运行期设置必须同批入队：物理线程在全部增删完成后才解析重挂，
+	// 新父模块即使与本批新增处于同帧也能被正确解析
 	UE::TWriteScopeLock InputConfigLock(TreeConfigurationLock);
-	NextTreeUpdatesInternal.Add(*InNextTreeUpdatesInternal);
+	NextTreeUpdatesInternal.Add(*InUpdate);
 }
 
 void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
@@ -108,120 +115,205 @@ void FSingularisMorphVehicleSimulation::ActionTreeUpdates()
 	if (NextTreeUpdatesInternal.IsEmpty())
 		return;
 
-	if (SimModuleTree.IsValid())
+	if (!SimModuleTree.IsValid())
 	{
-		for (Chaos::FSimTreeUpdates& TreeUpdate : NextTreeUpdatesInternal)
+		NextTreeUpdatesInternal.Empty();
+		return;
+	}
+
+	TArray<TPair<FName, int32>> RequestedModules;
+	TArray<FSingularisMorphModuleReparent> PendingReparents;
+	TArray<FSingularisMorphWheelSpeedLimit> PendingWheelSpeedLimits;
+
+	// 1) 先应用全部新增/删除。FSimTreeUpdates::AppendTreeUpdates 在单批内先增后删，
+	//    因此待新增指针在删除后可能悬垂；只记录类型与 GUID，提交后统一从树中取值。
+	for (const FSingularisMorphTreeUpdate& Update : NextTreeUpdatesInternal)
+	{
+		RequestedModules.Reserve(RequestedModules.Num() + Update.TreeUpdates.GetNewModules().Num());
+		for (const Chaos::FPendingModuleAdds& ModuleAdd : Update.TreeUpdates.GetNewModules())
 		{
-			// FSimTreeUpdates::AppendTreeUpdates 先处理新增再处理删除：同一批次内"新增后删除"
-			// 的模块会在删除阶段被释放，事后读取待新增链表中的指针即为悬垂访问。
-			// 因此先记录类型与 GUID，提交后按 GUID 从树中取真实树索引上报。
-			TArray<TPair<FName, int32>> RequestedModules;
-			RequestedModules.Reserve(TreeUpdate.GetNewModules().Num());
-			for (const Chaos::FPendingModuleAdds& ModuleAdd : TreeUpdate.GetNewModules())
+			if (ModuleAdd.NewSimModule)
+				RequestedModules.Emplace(ModuleAdd.NewSimModule->GetSimType(), ModuleAdd.NewSimModule->GetGuid());
+		}
+
+		SimModuleTree->AppendTreeUpdates(Update.TreeUpdates);
+		PendingReparents.Append(Update.Reparents);
+		PendingWheelSpeedLimits.Append(Update.WheelSpeedLimits);
+	}
+
+	// 2) 建立 GUID → 树索引表。增删已全部完成，本批新增模块与既有模块都在表中。
+	const int32 NumNodes = SimModuleTree->GetNumNodes();
+	TMap<int32, int32> TreeIndexByGuid;
+	TreeIndexByGuid.Reserve(NumNodes);
+	for (auto Index = 0; Index < NumNodes; ++Index)
+	{
+		const Chaos::ISimulationModuleBase* Module = SimModuleTree->GetNode(Index).SimModule;
+		if (Module)
+			TreeIndexByGuid.Add(Module->GetGuid(), Index);
+	}
+
+	// 3) 统一重挂父节点。父/子缺失时跳过并告警，绝不以错误索引重挂。
+	for (const FSingularisMorphModuleReparent& Reparent : PendingReparents)
+	{
+		if (Reparent.ChildGuid == INDEX_NONE || Reparent.ParentGuid == INDEX_NONE)
+			continue;
+
+		const int32* ChildIndex = TreeIndexByGuid.Find(Reparent.ChildGuid);
+		const int32* ParentIndex = TreeIndexByGuid.Find(Reparent.ParentGuid);
+		if (!ChildIndex || !ParentIndex)
+		{
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Warning,
+				TEXT("[ActionTreeUpdates] Reparent skipped: child GUID %d (%s), parent GUID %d (%s)"),
+				Reparent.ChildGuid,
+				ChildIndex ? TEXT("found") : TEXT("missing"),
+				Reparent.ParentGuid,
+				ParentIndex ? TEXT("found") : TEXT("missing")
+			);
+			continue;
+		}
+
+		if (*ChildIndex == *ParentIndex || SimModuleTree->GetParent(*ChildIndex) == *ParentIndex)
+			continue;
+
+		// 防御损坏计划造成的环：父链上出现子节点时拒绝重挂
+		auto bCreatesCycle = false;
+		for (auto Cursor = *ParentIndex, Depth = 0;
+		     Cursor >= 0 && Depth < NumNodes;
+		     ++Depth)
+		{
+			if (Cursor == *ChildIndex)
 			{
-				if (ModuleAdd.NewSimModule)
-					RequestedModules.Emplace(ModuleAdd.NewSimModule->GetSimType(), ModuleAdd.NewSimModule->GetGuid());
+				bCreatesCycle = true;
+				break;
 			}
 
-			SimModuleTree->AppendTreeUpdates(TreeUpdate);
-			FSingularisMorphVehicleBuilder::FixupTreeLinks(SimModuleTree);
+			if (!SimModuleTree->IsValidNode(Cursor))
+				break;
 
-			// 树变更后输出模块结构快照，供物理线程侧问题定位。
+			Cursor = SimModuleTree->GetParent(Cursor);
+		}
+
+		if (bCreatesCycle)
+		{
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Error,
+				TEXT("[ActionTreeUpdates] Reparent rejected (cycle): child GUID %d, parent GUID %d"),
+				Reparent.ChildGuid,
+				Reparent.ParentGuid
+			);
+			continue;
+		}
+
+		SimModuleTree->Reparent(*ChildIndex, *ParentIndex);
+	}
+
+	// 4) 拓扑稳定后再建立悬挂↔车轮交叉链接，并输出一次结构快照
+	FSingularisMorphVehicleBuilder::FixupTreeLinks(SimModuleTree);
+
+	// 5) 保留车轮的转速上限原位更新。车轮模块在 CreateNewCoreModule 中读取该设置，
+	//    仅重建模块才能生效；而重建会把角位置与动画槽位清零，造成轮胎闪烁。
+	//    因此动力链变化导致的上限变化必须直接写入已存在的模块设置。
+	for (const FSingularisMorphWheelSpeedLimit& Limit : PendingWheelSpeedLimits)
+	{
+		if (!FMath::IsFinite(Limit.MaxRotationVel)) continue;
+
+		const int32* TreeIndex = TreeIndexByGuid.Find(Limit.ModuleGuid);
+		if (!TreeIndex) continue;
+
+		Chaos::ISimulationModuleBase* Module = SimModuleTree->AccessSimModule(*TreeIndex);
+		Chaos::FWheelSimModule* Wheel = Module ? Module->Cast<Chaos::FWheelSimModule>() : nullptr;
+		if (!Wheel) continue;
+
+		Wheel->AccessSetup().MaxRotationVel = FMath::Max(Limit.MaxRotationVel, 0.0f);
+
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Verbose,
+			TEXT("[ActionTreeUpdates] Wheel speed limit updated: GUID %d -> %.1f rad/s"),
+			Limit.ModuleGuid,
+			Limit.MaxRotationVel
+		);
+	}
+
+	UE_LOG(
+		LogSingularisMorphVehicle,
+		Display,
+		TEXT("=== PT Tree after sync: %d nodes, %d reparents, %d wheel limits ==="),
+		NumNodes,
+		PendingReparents.Num(),
+		PendingWheelSpeedLimits.Num()
+	);
+	for (auto Index = 0; Index < NumNodes; ++Index)
+	{
+		Chaos::ISimulationModuleBase* Module = SimModuleTree->GetNode(Index).SimModule;
+		if (!Module)
+			continue;
+
+		const int32 ParentIdx = SimModuleTree->GetNode(Index).Parent;
+		const int32 NumChildren = SimModuleTree->GetNode(Index).Children.Num();
+		FString DebugStr;
+		Module->GetDebugString(DebugStr);
+		UE_LOG(
+			LogSingularisMorphVehicle,
+			Display,
+			TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
+			Index,
+			*DebugStr,
+			ParentIdx,
+			NumChildren,
+			Module->GetGuid(),
+			Module->GetTransformIndex()
+		);
+
+		if (Module->IsSimType<Chaos::FSuspensionBaseInterface>())
+		{
+			auto* Suspension = Module->Cast<Chaos::FSuspensionBaseInterface>();
 			UE_LOG(
 				LogSingularisMorphVehicle,
 				Display,
-				TEXT("=== PT Tree after Fixup: %d nodes ==="),
-				SimModuleTree->GetNumNodes()
+				TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
+				Suspension->GetWheelSimTreeIndex(),
+				Suspension->GetMaxSpringLength()
 			);
-			for (auto N = 0; N < SimModuleTree->GetNumNodes(); N++)
-			{
-				Chaos::ISimulationModuleBase* Mod = SimModuleTree->GetNode(N).SimModule;
-				if (Mod)
-				{
-					const int32 ParentIdx = SimModuleTree->GetNode(N).Parent;
-					const int32 NumChildren = SimModuleTree->GetNode(N).Children.Num();
-					FString DebugStr;
-					Mod->GetDebugString(DebugStr);
-					UE_LOG(
-						LogSingularisMorphVehicle,
-						Display,
-						TEXT("  Node[%d]: %s | Parent=%d Children=%d | GUID=%d TransformIdx=%d"),
-						N,
-						*DebugStr,
-						ParentIdx,
-						NumChildren,
-						Mod->GetGuid(),
-						Mod->GetTransformIndex()
-					);
-
-					// Log suspension-wheel links
-					if (Mod->IsSimType<Chaos::FSuspensionBaseInterface>())
-					{
-						auto* Susp = Mod->Cast<Chaos::FSuspensionBaseInterface>();
-						UE_LOG(
-							LogSingularisMorphVehicle,
-							Display,
-							TEXT("    Suspension: WheelSimTreeIdx=%d, MaxLength=%.1f"),
-							Susp->GetWheelSimTreeIndex(),
-							Susp->GetMaxSpringLength()
-						);
-					}
-					if (Mod->IsSimType<Chaos::FWheelBaseInterface>())
-					{
-						auto* Wheel = Mod->Cast<Chaos::FWheelBaseInterface>();
-						UE_LOG(
-							LogSingularisMorphVehicle,
-							Display,
-							TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
-							Wheel->GetSuspensionSimTreeIndex(),
-							Wheel->GetWheelRadius()
-						);
-					}
-				}
-			}
-
-			// NewlyCreatedModuleGuids 供游戏线程确认模块已存在。
-			// 同批次自增自删的模块在树中已不存在，不上报（其 GUID 全局唯一且永不复用，
-			// 只是该模块已不在树中）。一次遍历建表，避免逐个待新增模块全树扫描
-			if (!RequestedModules.IsEmpty())
-			{
-				TMap<int32, int32> TreeIndexByGuid;
-				TreeIndexByGuid.Reserve(SimModuleTree->GetNumNodes());
-				for (auto N = 0; N < SimModuleTree->GetNumNodes(); N++)
-				{
-					const Chaos::ISimulationModuleBase* Mod = SimModuleTree->GetNode(N).SimModule;
-					if (Mod)
-						TreeIndexByGuid.Add(Mod->GetGuid(), Mod->GetTreeIndex());
-				}
-
-				for (const TPair<FName, int32>& Requested : RequestedModules)
-				{
-					if (const int32* FoundTreeIndex = TreeIndexByGuid.Find(Requested.Value))
-					{
-						NewlyCreatedModuleGuids.Add(
-							Chaos::FCreatedModule(Requested.Key, Requested.Value, *FoundTreeIndex)
-						);
-					}
-				}
-			}
 		}
+		if (Module->IsSimType<Chaos::FWheelBaseInterface>())
+		{
+			auto* Wheel = Module->Cast<Chaos::FWheelBaseInterface>();
+			UE_LOG(
+				LogSingularisMorphVehicle,
+				Display,
+				TEXT("    Wheel: SuspSimTreeIdx=%d, Radius=%.1f"),
+				Wheel->GetSuspensionSimTreeIndex(),
+				Wheel->GetWheelRadius()
+			);
+		}
+	}
+
+	// 6) 本批成功进入树中的新增模块上报游戏线程；同批自增自删的模块不在表中，自然跳过
+	for (const TPair<FName, int32>& Requested : RequestedModules)
+	{
+		if (const int32* FoundTreeIndex = TreeIndexByGuid.Find(Requested.Value))
+			NewlyCreatedModuleGuids.Add(Chaos::FCreatedModule(Requested.Key, Requested.Value, *FoundTreeIndex));
+	}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-		if (bSingularisMorphVehicle_DumpModuleTreeStructure_Enabled)
+	if (bSingularisMorphVehicle_DumpModuleTreeStructure_Enabled)
+	{
+		UE_LOGF(LogSingularisMorphVehicle, Warning, "SimTreeModules:");
+		for (auto Index = 0; Index < NumNodes; Index++)
 		{
-			UE_LOGF(LogSingularisMorphVehicle, Warning, "SimTreeModules:");
-			for (auto I = 0; I < SimModuleTree->GetNumNodes(); I++)
+			if (Chaos::ISimulationModuleBase* Module = SimModuleTree->GetNode(Index).SimModule)
 			{
-				if (Chaos::ISimulationModuleBase* Module = SimModuleTree->GetNode(I).SimModule)
-				{
-					FString String;
-					Module->GetDebugString(String);
-					UE_LOGF(LogSingularisMorphVehicle, Warning, "..%ls", *String);
-				}
+				FString String;
+				Module->GetDebugString(String);
+				UE_LOGF(LogSingularisMorphVehicle, Warning, "..%ls", *String);
 			}
 		}
-#endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	}
+#endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 
 	NextTreeUpdatesInternal.Empty();
 }

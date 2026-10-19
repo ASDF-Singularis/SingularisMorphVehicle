@@ -10,6 +10,7 @@
 #include "Types/SingularisMorphSimModuleManagerAsyncCallback.h"
 #include "Types/SingularisMorphVehiclePhysicsAdapterType.h"
 #include "Types/SingularisMorphVehicleSimType.h"
+#include "Types/SingularisMorphVehicleTreeUpdate.h"
 #include "SingularisMorphVehicleSimulationComponent.generated.h"
 
 namespace Chaos
@@ -576,6 +577,12 @@ private:
 	/** 待提交到物理线程的模块树增删队列（仅游戏线程） */
 	Chaos::FSimTreeUpdates StoredTreeUpdates{};
 
+	/** 与 StoredTreeUpdates 同批提交的父节点重挂队列（仅游戏线程） */
+	TArray<FSingularisMorphModuleReparent> StoredTreeReparents{};
+
+	/** 与 StoredTreeUpdates 同批提交的车轮转速上限更新（仅游戏线程） */
+	TArray<FSingularisMorphWheelSpeedLimit> StoredWheelSpeedLimits{};
+
 #pragma endregion
 
 public:
@@ -622,9 +629,10 @@ public:
 	void RemoveSimulationModule(int32 ModuleGuid);
 
 	/**
-	 * 提交本帧累积的全部模块增删到物理线程。
+	 * 提交本帧累积的全部模块增删、父节点重挂与车轮限速更新到物理线程。
 	 *
-	 * 无参数变更时为空操作；提交后重新应用物理阻尼并标记网络复制结构待重建。
+	 * 三者作为一次原子更新提交；无变更时为空操作。
+	 * 仅增删或重挂会标记网络复制结构待重建。
 	 */
 	void FinalizeModuleUpdates();
 
@@ -638,8 +646,8 @@ public:
 	 * 最末端（轮轴→变速箱→离合→原动机→底盘，缺项时取最近的现存上游）
 	 * 并注入槽位的转向/轴向/反转配置，未匹配的自由轮挂底盘之下。
 	 * 与现存模块逐一比对后仅处理差异：计划外模块移除、缺失模块新建、
-	 * 驱动组件/粒子索引/动画开关变化及父节点失效的模块替换（先移除再新建）；
-	 * 未受影响的模块不重建，积分状态天然延续。
+	 * 驱动组件/槽位配置/粒子索引/动画开关变化时替换（先移除再新建并移植动态状态）；
+	 * 父节点变化的保留模块仅按 GUID 重挂，不重建，积分状态与动画槽位原样延续。
 	 * 处理完毕后调用 FinalizeModuleUpdates 批量提交到物理线程。
 	 * 空快照且当前无模块时无操作；空快照且存在模块（载具解体）时清除全部模块。
 	 */

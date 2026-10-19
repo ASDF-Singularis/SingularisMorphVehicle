@@ -176,6 +176,19 @@ public:
 	/** 设置建树期有效轮速上限（动力链最高转速折算值） */
 	void SetEffectiveMaxRotationVel(const float InValue) { EffectiveMaxRotationVel = FMath::Max(InValue, 0.0f); }
 
+	/** 获取建树期有效轮速上限（0 表示未由动力链提供） */
+	float GetEffectiveMaxRotationVel() const { return EffectiveMaxRotationVel; }
+
+	/** 车轮模块最终使用的转速上限：自身安全上限与动力链折算上限取较大者 */
+	float GetResolvedMaxRotationVel() const
+	{
+		const float Base = FMath::IsFinite(MaxRotationVel) ? FMath::Max(MaxRotationVel, 0.0f) : 0.0f;
+		const float Effective = FMath::IsFinite(EffectiveMaxRotationVel)
+			                        ? FMath::Max(EffectiveMaxRotationVel, 0.0f)
+			                        : 0.0f;
+		return FMath::Max(Base, Effective);
+	}
+
 #pragma region Constructors
 
 	USingularisWheelComponent();
