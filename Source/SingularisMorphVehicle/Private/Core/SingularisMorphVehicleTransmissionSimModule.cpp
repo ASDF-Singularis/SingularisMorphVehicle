@@ -44,13 +44,25 @@ FSingularisMorphTransmissionSimModule::FSingularisMorphTransmissionSimModule(
 		if (!FMath::IsFinite(Ratio))
 			Ratio = 0.0f;
 	}
+	auto bHasReverseGear = false;
 	for (float& Ratio : SettingsRef.ReverseRatios)
 	{
 		if (!FMath::IsFinite(Ratio))
 			Ratio = 0.0f;
+
+		if (FMath::Abs(Ratio) > SMALL_NUMBER)
+			bHasReverseGear = true;
 	}
 	if (!FMath::IsFinite(SettingsRef.FinalDriveRatio))
 		SettingsRef.FinalDriveRatio = 0.0f;
+
+	// AutoReverse 由官方状态机在 Simulate 开头直接改写 TargetGear，且不经过 SetGear 的
+	// 空挡过渡：手动变速箱按住油门降挡到空挡时会被改回倒挡，倒挡松键时又会被直接拉回
+	// 前进挡，形成换挡冲击与倒车失控。手动变速箱的方向只由 ChangeUp/ChangeDown 脉冲
+	// 逐挡决定，故仅在「自动变速箱且存在有效倒挡」时保留 AutoReverse；
+	// 无倒挡时 AutoReverse 会把目标挡位夹成 0，随后自动逻辑又升回前进挡。
+	if (SettingsRef.TransmissionType != Chaos::FTransmissionSettings::AutomaticType || !bHasReverseGear)
+		SettingsRef.AutoReverse = false;
 
 	// 上游构造函数无条件把初始挡位设为 1；前进挡为空时 GetGearRatio(1) 会越界访问
 	if (SettingsRef.ForwardRatios.IsEmpty())
@@ -63,6 +75,12 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 	Chaos::FSimModuleTree& VehicleModuleSystem
 )
 {
+	// 0) 兜底：运行时改写设置或直接构造模块时，手动变速箱仍不得接受 AutoReverse 的
+	//    目标挡位覆盖（官方实现绕过 SetGear，没有空挡过渡）
+	if (Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType
+		&& Setup().AutoReverse)
+		AccessSetup().AutoReverse = false;
+
 	// 1) 换挡点随原动机配置动态校准，保证换装不同引擎后仍按同一换挡逻辑工作
 	UpdateShiftPoints(VehicleModuleSystem);
 
@@ -90,6 +108,10 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 
 	// 3) 官方自动/手动换挡状态机与扭矩传递
 	FTransmissionSimModule::Simulate(DeltaTime, Inputs, VehicleModuleSystem);
+
+	// 输入扭矩由上游每个物理步重新写入；本步消费后清零，避免原动机被移除或停止写入时，
+	// 旧扭矩在挡位内被持续下推（倒挡会表现为持续反向加速）
+	DriveTorque = 0.0f;
 
 	// 4) 本步未向下游写入有效驱动力矩（空挡、零油门或非法值）时，递归清除更深层的
 	//    残留力矩，避免轮轴下一步把上一挡扭矩继续推给车轮
@@ -149,17 +171,19 @@ void FSingularisMorphTransmissionSimModule::Simulate(
 bool FSingularisMorphTransmissionSimModule::GetDebugString(FString& StringOut) const
 {
 	const bool bResult = FTransmissionSimModule::GetDebugString(StringOut);
-	const TCHAR* ShiftMode = Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType
-		                         ? TEXT("manual")
-		                         : bShiftPointsResolved
-		                         ? TEXT("auto")
-		                         : TEXT("unresolved");
+
+	// 手动变速箱没有 RPM 阈值，只报告方向由换挡脉冲驱动，避免把官方默认值误读为配置
+	if (Setup().TransmissionType != Chaos::FTransmissionSettings::AutomaticType)
+	{
+		StringOut += TEXT(", manual (pulse-driven)");
+		return bResult;
+	}
 
 	StringOut += FString::Printf(
-		TEXT(", ShiftUp %d RPM, ShiftDown %d RPM (%s)"),
+		TEXT(", AutoShiftUp %d RPM, AutoShiftDown %d RPM (%s)"),
 		static_cast<int32>(Setup().ChangeUpRPM),
 		static_cast<int32>(Setup().ChangeDownRPM),
-		ShiftMode
+		bShiftPointsResolved ? TEXT("resolved") : TEXT("unresolved")
 	);
 
 	return bResult;

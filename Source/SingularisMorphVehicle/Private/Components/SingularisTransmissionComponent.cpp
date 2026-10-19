@@ -59,7 +59,10 @@ Chaos::ISimulationModuleBase* USingularisTransmissionComponent::CreateNewCoreMod
 		                              : 0.0f;
 	Settings.TransmissionEfficiency = TransmissionEfficiency;
 	Settings.TransmissionType = static_cast<Chaos::FTransmissionSettings::ETransType>(TransmissionType);
-	Settings.AutoReverse = AutoReverse;
+
+	// 手动方向由逐挡脉冲决定；仿真模块构造时也会强制关闭 AutoReverse，此处提前对齐配置
+	Settings.AutoReverse = AutoReverse &&
+		(TransmissionType == ESingularisMorphVehicleTransmissionType::Automatic);
 
 	// 前进挡为空或主减速比为 0 时所有挡位都没有有效齿比；提前告警，
 	// 避免误判为空挡油门失效

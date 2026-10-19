@@ -133,12 +133,13 @@ public:
 	ESingularisMorphVehicleTransmissionType TransmissionType = ESingularisMorphVehicleTransmissionType::Automatic;
 
 	/**
-	 * 是否自动倒挡
+	 * 是否自动倒挡（仅自动变速箱生效）
 	 *
 	 * 启用后，按住 Reverse 输入通道时目标挡位切至倒挡，松开后回到前进挡。
 	 * 方向切换由输入直接驱动，与升降挡转速比例无关；
 	 * 转速比例只在同一方向内选择具体挡位。
-	 * 关闭后自动换挡逻辑不会跨越空挡进入倒挡，方向完全由挡位输入决定。
+	 * 手动变速箱或没有有效倒挡时忽略该选项：官方 AutoReverse 会绕过空挡过渡
+	 * 直接改写目标挡位，与逐挡换挡脉冲冲突；手动方向完全由 ChangeUp/ChangeDown 决定。
 	 */
 	UPROPERTY(
 		EditDefaultsOnly,

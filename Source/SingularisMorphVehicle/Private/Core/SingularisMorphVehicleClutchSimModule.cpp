@@ -75,6 +75,7 @@ void FSingularisMorphClutchSimModule::Simulate(
 		}
 
 		TransmitTorque(VehicleModuleSystem, 0.0f, 0.0f, 1.0f, 0.0f);
+		DriveTorque = 0.0f;
 
 		if (bDownstreamNeutral && Engagement > KINDA_SMALL_NUMBER)
 		{
@@ -89,8 +90,10 @@ void FSingularisMorphClutchSimModule::Simulate(
 		return;
 	}
 
-	// 4) 接合：扭矩与转速耦合均按接合量缩放
+	// 4) 接合：扭矩与转速耦合均按接合量缩放。输入扭矩由原动机每个物理步重新写入，
+	//    本步消费后清零，避免原动机被移除或停止写入时旧扭矩被持续下推
 	TransmitTorque(VehicleModuleSystem, DriveTorque, 0.0f, 1.0f, Engagement);
+	DriveTorque = 0.0f;
 }
 
 bool FSingularisMorphClutchSimModule::GetDebugString(FString& StringOut) const

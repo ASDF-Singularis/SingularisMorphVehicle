@@ -7,6 +7,8 @@
  *
  * 换挡点由原动机可用转速区间与相邻挡位齿比步长推导，不提供固定 RPM 配置：
  * 升挡点取可用转速带上部的比例，降挡点受「降挡后转速不得超过升挡点」约束。
+ * 这些比例只决定同一方向内的挡位选择；方向切换由自动倒挡（仅自动变速箱）
+ * 或手动升降挡脉冲处理，与 RPM 阈值无关。
  */
 struct SINGULARISMORPHVEHICLE_API FSingularisMorphTransmissionShiftSettings
 {

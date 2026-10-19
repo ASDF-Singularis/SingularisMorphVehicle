@@ -25,6 +25,10 @@ void FSingularisMorphWheelSimModule::Simulate(
 	if (!SteeringSettings.bEnabled || BaseMaxSteeringAngle <= KINDA_SMALL_NUMBER)
 	{
 		FWheelSimModule::Simulate(DeltaTime, Inputs, VehicleModuleSystem);
+
+		// 驱动扭矩由上游每个物理步重新下发；消费后清零，避免上游被移除或断开后
+		// 残留扭矩持续驱动车轮
+		SetDriveTorque(0.0f);
 		return;
 	}
 
@@ -58,6 +62,10 @@ void FSingularisMorphWheelSimModule::Simulate(
 	// 3) 记录本步侧向力：下一物理步按回正力矩削减转向角
 	const FVector FrictionForce = GetForceFromFriction();
 	LastLateralForce = Setup().Axis == Chaos::EWheelAxis::X ? FrictionForce.Y : FrictionForce.X;
+
+	// 驱动扭矩由上游每个物理步重新下发；消费后清零，避免上游被移除或断开后
+	// 残留扭矩持续驱动车轮
+	SetDriveTorque(0.0f);
 }
 
 void FSingularisMorphWheelSimModule::ApplyUprightSlotConfig(const FSingularisMorphUprightSlotConfig& InSlotConfig)
