@@ -92,6 +92,29 @@ namespace
 	}
 
 	/**
+	 * 将车轮组件恢复为抑制前的碰撞与物理模拟状态。
+	 *
+	 * 先恢复碰撞再恢复模拟：物理模拟要求碰撞启用包含物理，顺序相反会在恢复瞬间
+	 * 触发引擎的无效模拟选项告警。原始状态本身不含物理碰撞时保持模拟关闭。
+	 */
+	void RestoreWheelComponentState(
+		UPrimitiveComponent& Component,
+		const FSingularisMorphWheelCollisionSnapshot& Snapshot
+	)
+	{
+		ApplyCollisionResponses(Component, Snapshot.CollisionResponses);
+		Component.SetCollisionEnabled(Snapshot.CollisionEnabled);
+
+		// 碰撞启用不含物理时不可能有效模拟，恢复它只会让引擎重建无效物理体并告警。
+		// 保留现有挂接关系：本方法只恢复被抑制的模拟标志，不改变部件拓扑；
+		// 真正的拆卸由装备/交互流程负责，避免物理状态重建时误拆分仍挂接的车轮
+		const bool bSupportsPhysics = Snapshot.CollisionEnabled == ECollisionEnabled::QueryAndPhysics
+			|| Snapshot.CollisionEnabled == ECollisionEnabled::PhysicsOnly;
+		if (Snapshot.bSimulatePhysics && bSupportsPhysics)
+			Component.BodyInstance.SetInstanceSimulatePhysics(true, false, /*bPreserveExistingAttachment=*/true);
+	}
+
+	/**
 	 * 从最新异步输出读取变速箱当前挡位。
 	 *
 	 * 游戏线程用于插值显示的 CurrentGear 来自较旧的输出帧（FTransmissionOutputData::Lerp
@@ -134,6 +157,8 @@ USingularisMorphVehicleSimulationComponent::USingularisMorphVehicleSimulationCom
 	SuspensionTraceCollisionResponses.SetAllChannels(ECR_Block);
 	SuspensionTraceCollisionResponses.SetResponse(ECC_Vehicle, ECR_Ignore);
 	SuspensionTraceCollisionResponses.SetResponse(ECC_EngineTraceChannel1, ECR_Ignore);
+
+	SimulatedWheelCollisionResponses.SetAllChannels(ECR_Ignore);
 
 	bUsingNetworkPhysicsPrediction = Chaos::FPhysicsSolverBase::IsNetworkPhysicsPredictionEnabled();
 	CurrentAsyncDataType = AsyncInvalid;
@@ -271,7 +296,7 @@ void USingularisMorphVehicleSimulationComponent::OnDestroyPhysicsState()
 	LatestAsyncOutputTimestamp = INDEX_NONE;
 	OutputInterpolationAlpha = 0.0f;
 
-	// 6) 恢复全部被抑制的车轮碰撞：物理状态拆除（含对象池回收）后不得残留抑制状态
+	// 6) 恢复全部被抑制的车轮状态：物理状态拆除（含对象池回收）后不得残留抑制状态
 	RestoreAllWheelCollisionSuppression();
 
 	Super::OnDestroyPhysicsState();
@@ -1104,9 +1129,9 @@ void USingularisMorphVehicleSimulationComponent::RebuildFromSnapshot(
 		StoredWheelSpeedLimits.Add({Data->Guid, WheelSU->GetResolvedMaxRotationVel()});
 	}
 
-	// 车轮碰撞抑制对账（活动车轮集合 → 抑制/恢复）。
+	// 车轮状态抑制对账（活动车轮集合 → 抑制/恢复）。
 	// 与拓扑是否变更无关：任何一帧都必须对账，否则外部（组件物理状态重建、载具逻辑）
-	// 恢复过的轮胎碰撞会在「无拓扑差异」帧被静默保留，重新成为解析悬挂之外的第二支撑
+	// 恢复过的轮胎状态会在「无拓扑差异」帧被静默保留，重新成为解析悬挂之外的第二支撑
 	const auto ReconcileActiveWheelCollision = [this, &Wheels]()
 	{
 		TSet<UPrimitiveComponent*> ActiveWheelComponents;
@@ -2422,7 +2447,7 @@ void USingularisMorphVehicleSimulationComponent::ClearAllSimulationModules()
 	StoredWheelSpeedLimits.Reset();
 	FinalizeModuleUpdates();
 
-	// 4) 恢复全部被抑制的车轮碰撞：模块已全部清除，无车轮处于模拟状态
+	// 4) 恢复全部被抑制的车轮状态：模块已全部清除，无车轮处于模拟状态
 	RestoreAllWheelCollisionSuppression();
 }
 
@@ -3023,13 +3048,19 @@ void USingularisMorphVehicleSimulationComponent::SuppressWheelCollision(UPrimiti
 	const TWeakObjectPtr<UPrimitiveComponent> Key{WheelComponent};
 	if (SuppressedWheelCollisions.Contains(Key)) return;
 
-	// 2) 记录原始碰撞配置，供分离或拆除时精确恢复（只记录本方法会改动的字段）
+	// 2) 记录原始状态，供分离或拆除时精确恢复（只记录本方法会改动的字段）
 	FSingularisMorphWheelCollisionSnapshot Snapshot;
 	Snapshot.CollisionEnabled = WheelComponent->GetCollisionEnabled();
 	Snapshot.CollisionResponses = CaptureCollisionResponses(*WheelComponent);
+	Snapshot.bSimulatePhysics = WheelComponent->BodyInstance.bSimulatePhysics;
 	SuppressedWheelCollisions.Add(Key, Snapshot);
 
-	// 3) 施加模拟期配置：启用模式解除物理接触，逐通道响应保留所需查询
+	// 3) 先停止独立模拟再切换碰撞：车轮由载具模拟/动画驱动，不属于独立刚体，
+	//    继续模拟会与无物理碰撞的启用模式冲突，引擎每次重建物理状态都会告警
+	if (Snapshot.bSimulatePhysics)
+		WheelComponent->SetSimulatePhysics(false);
+
+	// 4) 施加模拟期配置：QueryOnly 解除物理接触，逐通道响应阻断全部查询
 	ApplyCollisionResponses(*WheelComponent, SimulatedWheelCollisionResponses);
 	WheelComponent->SetCollisionEnabled(SimulatedWheelCollisionEnabled);
 }
@@ -3046,9 +3077,8 @@ void USingularisMorphVehicleSimulationComponent::RestoreWheelCollision(
 	UPrimitiveComponent* Component = WheelComponent.Get();
 	if (!IsValid(Component)) return;
 
-	// 3) 逐项写回原始配置
-	ApplyCollisionResponses(*Component, Snapshot.CollisionResponses);
-	Component->SetCollisionEnabled(Snapshot.CollisionEnabled);
+	// 3) 逐项写回原始配置（先碰撞后模拟）
+	RestoreWheelComponentState(*Component, Snapshot);
 }
 
 void USingularisMorphVehicleSimulationComponent::ReconcileWheelCollisionSuppression(
@@ -3079,11 +3109,9 @@ void USingularisMorphVehicleSimulationComponent::RestoreAllWheelCollisionSuppres
 
 	for (const auto& Pair : SuppressedWheelCollisions)
 	{
-		if (UPrimitiveComponent* Component = Pair.Key.Get())
-		{
-			ApplyCollisionResponses(*Component, Pair.Value.CollisionResponses);
-			Component->SetCollisionEnabled(Pair.Value.CollisionEnabled);
-		}
+		UPrimitiveComponent* Component = Pair.Key.Get();
+		if (IsValid(Component))
+			RestoreWheelComponentState(*Component, Pair.Value);
 	}
 
 	SuppressedWheelCollisions.Empty();

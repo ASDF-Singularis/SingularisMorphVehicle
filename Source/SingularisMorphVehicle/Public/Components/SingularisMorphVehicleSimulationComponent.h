@@ -40,15 +40,16 @@ class UCanvas;
 class USingularisMorphVehicleBaseComponent;
 
 /**
- * 车轮模拟期碰撞抑制的原始状态快照。
+ * 车轮模拟期状态抑制的原始状态快照。
  *
- * 记录抑制前组件的碰撞启用模式与逐通道响应，供轮胎分离或载具拆除时逐项恢复；
- * 抑制过程不改变碰撞物体类型，故不记录该字段。
+ * 记录抑制前组件的碰撞启用模式、逐通道响应与独立物理模拟状态，供轮胎分离或载具拆除时
+ * 逐项恢复；抑制过程不改变碰撞物体类型与移动性，故不记录这些字段。
  */
 struct FSingularisMorphWheelCollisionSnapshot
 {
 	ECollisionEnabled::Type CollisionEnabled = ECollisionEnabled::QueryAndPhysics;
 	FCollisionResponseContainer CollisionResponses{};
+	bool bSimulatePhysics = false;
 };
 
 #pragma region 委托签名
@@ -289,8 +290,10 @@ public:
 	/**
 	 * 模拟期间施加到车轮驱动组件的碰撞启用模式。
 	 *
-	 * 默认 QueryOnly：轮胎不参与物理接触（不成为解析悬挂之外的第二支撑），
-	 * 但保留查询响应，可被射线与重叠检测命中。
+	 * 默认 QueryOnly：保留集群联合所需的查询物理表示（NoCollision 会销毁物理状态
+	 * 并使车轮脱离集群），但不参与物理接触，也不会成为解析悬挂之外的第二支撑。
+	 * 查询交互由 SimulatedWheelCollisionResponses 默认全部忽略而阻断；
+	 * QueryAndPhysics/PhysicsOnly 会重新引入物理接触，不应使用。
 	 */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -303,9 +306,8 @@ public:
 	/**
 	 * 模拟期间施加到车轮驱动组件的逐通道碰撞响应。
 	 *
-	 * 与 SuspensionTraceCollisionResponses 配套：把悬挂射线所用通道（SuspensionCollisionChannel）
-	 * 在此设为忽略，可避免悬挂射线命中轮胎自身。物理接触由 SimulatedWheelCollisionEnabled 关闭，
-	 * 本响应仅决定查询交互；默认阻止全部通道。
+	 * 默认忽略全部通道：QueryOnly 仍保留查询表示，必须由本配置阻断悬挂射线、
+	 * 交互射线与重叠检测命中轮胎自身；默认忽略可视为对 NoCollision 的行为等价。
 	 */
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -445,10 +447,10 @@ private:
 	TMap<FSingularisMorphModuleRestPoseKey, FSingularisMorphModuleRestPose> ModuleRestPoses{};
 
 	/**
-	 * 已抑制碰撞的车轮驱动组件 → 原始碰撞配置（仅游戏线程）。
+	 * 已抑制的车轮驱动组件 → 原始状态快照（仅游戏线程）。
 	 *
 	 * 键为弱引用，组件销毁后条目在下一次对账时裁剪。用于轮胎分离、载具解体或
-	 * 物理状态拆除时精确恢复原始碰撞，避免被回收复用的组件残留「被抑制」状态。
+	 * 物理状态拆除时精确恢复碰撞与独立物理模拟，避免被回收复用的组件残留「被抑制」状态。
 	 */
 	TMap<TWeakObjectPtr<UPrimitiveComponent>, FSingularisMorphWheelCollisionSnapshot> SuppressedWheelCollisions{};
 
@@ -1068,14 +1070,15 @@ private:
 	void PruneModuleRestPoses(const TSet<FSingularisMorphModuleRestPoseKey>& LiveKeys);
 
 	/**
-	 * 抑制单个车轮驱动组件的碰撞。
+	 * 抑制单个车轮驱动组件的独立物理与碰撞。
 	 *
-	 * 记录原始启用模式与逐通道响应后，按 SimulatedWheelCollision* 施加模拟期配置。
-	 * 目标已记录时幂等跳过，不覆盖原始快照。
+	 * 记录原始碰撞启用模式、逐通道响应与物理模拟状态后，先停止独立模拟，
+	 * 再按 SimulatedWheelCollision* 施加模拟期配置。目标已记录时幂等跳过，
+	 * 不覆盖原始快照。
 	 */
 	void SuppressWheelCollision(UPrimitiveComponent* WheelComponent);
 
-	/** 恢复单个车轮组件的原始碰撞配置并删除记录；组件已销毁时仅删除记录 */
+	/** 恢复单个车轮组件的原始碰撞与物理模拟状态并删除记录；组件已销毁时仅删除记录 */
 	void RestoreWheelCollision(const TWeakObjectPtr<UPrimitiveComponent>& WheelComponent);
 
 	/**
