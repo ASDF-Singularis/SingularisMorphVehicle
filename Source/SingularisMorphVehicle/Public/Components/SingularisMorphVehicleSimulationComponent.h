@@ -1082,13 +1082,21 @@ private:
 	void RestoreWheelCollision(const TWeakObjectPtr<UPrimitiveComponent>& WheelComponent);
 
 	/**
-	 * 按当前活动车轮集合对账碰撞抑制状态。
+	 * 按当前活动车轮集合对账抑制状态。
 	 *
 	 * 对活动车轮中尚未抑制者施加抑制、对已记录但不再活动者恢复、对已销毁者裁剪记录。
 	 * 以「期望集合 vs 已记录集合」对账，天然覆盖共享组件（轮胎与悬挂共用网格）、
 	 * 替换（先移除再新增）与组件销毁。
 	 */
 	void ReconcileWheelCollisionSuppression(const TSet<UPrimitiveComponent*>& ActiveWheelComponents);
+
+	/**
+	 * 将已记录车轮收敛回模拟期状态。
+	 *
+	 * 外部系统（装备/物品流程、物理状态重建）可能在两次拓扑重建之间恢复车轮的
+	 * 独立模拟或碰撞配置；每物理帧复核并写回抑制状态，避免无拓扑差异帧残留第二支撑。
+	 */
+	void ReapplyWheelCollisionSuppression();
 
 	/** 恢复全部被抑制的车轮组件（载具解体、物理状态拆除时调用） */
 	void RestoreAllWheelCollisionSuppression();

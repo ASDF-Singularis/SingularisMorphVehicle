@@ -1759,6 +1759,10 @@ void USingularisMorphVehicleSimulationComponent::Update(const float DeltaTime)
 
 void USingularisMorphVehicleSimulationComponent::PreTickGT(const float DeltaTime)
 {
+	// 外部系统（装备/物品流程、物理状态重建）可能在两次拓扑重建之间恢复车轮的
+	// 独立模拟或查询配置；抑制复核必须先于脏标记早退执行，保证每一物理帧收敛
+	ReapplyWheelCollisionSuppression();
+
 	if (!PhysicsAdapter || !PhysicsAdapter->IsReady() || !PhysicsAdapter->IsDirty()) return;
 
 	// 前置守卫：缺少映射子系统、Owner 或物理线程端模拟对象时重建必然失败。
@@ -3101,6 +3105,26 @@ void USingularisMorphVehicleSimulationComponent::ReconcileWheelCollisionSuppress
 
 	for (const TWeakObjectPtr<UPrimitiveComponent>& Entry : StaleEntries)
 		RestoreWheelCollision(Entry);
+}
+
+void USingularisMorphVehicleSimulationComponent::ReapplyWheelCollisionSuppression()
+{
+	if (SuppressedWheelCollisions.IsEmpty()) return;
+
+	for (const auto& Pair : SuppressedWheelCollisions)
+	{
+		UPrimitiveComponent* Component = Pair.Key.Get();
+		if (!IsValid(Component)) continue;
+
+		if (Component->BodyInstance.bSimulatePhysics)
+			Component->SetSimulatePhysics(false);
+
+		if (Component->GetCollisionEnabled() != SimulatedWheelCollisionEnabled.GetValue())
+			Component->SetCollisionEnabled(SimulatedWheelCollisionEnabled);
+
+		if (CaptureCollisionResponses(*Component) != SimulatedWheelCollisionResponses)
+			ApplyCollisionResponses(*Component, SimulatedWheelCollisionResponses);
+	}
 }
 
 void USingularisMorphVehicleSimulationComponent::RestoreAllWheelCollisionSuppression()
